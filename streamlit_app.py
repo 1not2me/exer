@@ -11,7 +11,7 @@ import re
 # =========================
 st.set_page_config(page_title="שאלון שיבוץ סטודנטים – תשפ״ו", layout="centered")
 
-# ====== עיצוב מודרני + RTL + הסתרת "Press Enter to apply" ======
+# ====== עיצוב מודרני + RTL ======
 st.markdown("""
 <style>
 @font-face {
@@ -52,8 +52,6 @@ html, body, [class*="css"] {
 }
 h1,h2,h3,.stMarkdown h1,.stMarkdown h2{
   text-align:center;
-  letter-spacing:.5px;
-  text-shadow:0 1px 2px rgba(255,255,255,.7);
   font-weight:700;
   color:#222;
   margin-bottom:1rem;
@@ -67,38 +65,6 @@ h1,h2,h3,.stMarkdown h1,.stMarkdown h2{
   font-size:1.1rem!important;
   font-weight:600!important;
   box-shadow:0 8px 18px var(--ring)!important;
-  transition:all .15s ease!important;
-}
-.stButton > button:hover{
-  transform:translateY(-3px) scale(1.02);
-  filter:brightness(1.08);
-}
-.stButton > button:focus{
-  outline:none!important;
-  box-shadow:0 0 0 4px var(--ring)!important;
-}
-div.stSelectbox > div,
-div.stMultiSelect > div,
-.stTextInput > div > div > input{
-  border-radius:14px!important;
-  border:1px solid rgba(15,23,42,.12)!important;
-  box-shadow:0 3px 10px rgba(15,23,42,.04)!important;
-  padding:.6rem .8rem!important;
-  color:var(--ink)!important;
-  font-size:1rem!important;
-}
-.stTabs [data-baseweb="tab"]{
-  border-radius:14px!important;
-  background:rgba(255,255,255,.65);
-  margin-inline-start:.3rem;
-  padding:.4rem .8rem;
-  font-weight:600;
-  min-width: 110px !important;
-  text-align:center;
-  font-size:0.9rem !important;
-}
-.stTabs [data-baseweb="tab"]:hover{
-  background:rgba(255,255,255,.9);
 }
 .stApp,.main,[data-testid="stSidebar"]{
   direction:rtl;
@@ -159,22 +125,41 @@ if is_admin_mode:
             else:
                 st.dataframe(df, use_container_width=True)
                 with st.expander("📥 הורדות", expanded=True):
-                    st.markdown('<div style="direction:rtl; text-align:right;">', unsafe_allow_html=True)
-                    st.download_button(
-                        "📄 Excel – כל הנתונים",
-                        data=df_to_excel_bytes(df),
-                        file_name="שאלון_שיבוץ_כללי.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
-                    st.download_button(
-                        "📄 CSV – כל הנתונים",
-                        data=df.to_csv(index=False, encoding="utf-8-sig"),
-                        file_name="שאלון_שיבוץ_כללי.csv",
-                        mime="text/csv",
-                        use_container_width=True
-                    )
-                    st.markdown('</div>', unsafe_allow_html=True)
+                    # הצגת כפתורי הורדה בעמודות מימין
+                    col_spacer, col_excel, col_csv = st.columns([8,1,1], gap="small")
+
+                    with col_excel:
+                        st.download_button(
+                            "📄 Excel – כל הנתונים",
+                            data=df_to_excel_bytes(df),
+                            file_name="שאלון_שיבוץ_כללי.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True,
+                            key="dl_excel_all"
+                        )
+
+                    with col_csv:
+                        st.download_button(
+                            "📄 CSV – כל הנתונים",
+                            data=df.to_csv(index=False, encoding="utf-8-sig"),
+                            file_name="שאלון_שיבוץ_כללי.csv",
+                            mime="text/csv",
+                            use_container_width=True,
+                            key="dl_csv_all"
+                        )
+
+                    # חיזוק RTL ויישור לימין
+                    st.markdown("""
+                    <style>
+                      .stExpander div[data-testid="stExpanderContent"] > div {
+                        direction: rtl;
+                        text-align: right;
+                      }
+                      [data-testid="stDownloadButton"] > div > button {
+                        width: 100%;
+                      }
+                    </style>
+                    """, unsafe_allow_html=True)
         else:
             st.error("סיסמה שגויה")
     st.stop()
