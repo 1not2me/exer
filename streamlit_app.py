@@ -8,7 +8,7 @@ st.set_page_config(page_title="מיפוי מדריכים לשיבוץ סטודנ
 ADMIN_PASSWORD = "rawan_0304"
 CSV_FILE = "mapping_data.csv"
 
-# ===== עיצוב (בלבד) =====
+# ===== עיצוב =====
 st.markdown("""
 <style>
 :root{
@@ -18,22 +18,20 @@ st.markdown("""
   --card:rgba(255,255,255,.85);
 }
 
-/* פונטים ו־RTL כללי */
+/* RTL + פונטים */
 html, body, [class*="css"] { font-family: system-ui, "Segoe UI", Arial; }
 .stApp, .main, [data-testid="stSidebar"]{ direction:rtl; text-align:right; }
 
-/* רקע רך עם גרדיאנטים */
+/* רקע */
 [data-testid="stAppViewContainer"]{
   background:
     radial-gradient(1200px 600px at 8% 8%, #e0f7fa 0%, transparent 65%),
     radial-gradient(1000px 500px at 92% 12%, #ede7f6 0%, transparent 60%),
     radial-gradient(900px 500px at 20% 90%, #fff3e0 0%, transparent 55%);
 }
-
-/* מרווחי תוכן */
 .block-container{ padding-top:1.1rem; }
 
-/* מסגור לטופס */
+/* מסגרת לטופס */
 [data-testid="stForm"]{
   background:var(--card);
   border:1px solid #e2e8f0;
@@ -42,47 +40,18 @@ html, body, [class*="css"] { font-family: system-ui, "Segoe UI", Arial; }
   box-shadow:0 8px 24px rgba(2,6,23,.06);
 }
 
-/* כותרות ומפרידים */
-h1, h2, h3, h4 { color:var(--ink); margin-top:.4rem; }
-hr{ border:none; border-top:1px solid #e2e8f0; margin:8px 0 16px; }
+/* תוויות + נקודתיים מימין */
+[data-testid="stWidgetLabel"] p{
+  text-align:right; 
+  margin-bottom:.25rem; 
+  color:var(--muted); 
+}
+[data-testid="stWidgetLabel"] p::after{
+  content: " :";
+}
 
-/* תוויות ווידג'טים לימין */
-[data-testid="stWidgetLabel"] p{ text-align:right; margin-bottom:.25rem; color:var(--muted); }
+/* שדות */
 input, textarea, select{ direction:rtl; text-align:right; }
-
-/* כפתורים (שליחה/הורדה) */
-.stButton > button, .stDownloadButton > button{
-  border:1px solid #e2e8f0;
-  border-radius:12px;
-  padding:.55rem 1rem;
-  background:#ffffff;
-  transition: box-shadow .2s, transform .02s;
-}
-.stButton > button:hover, .stDownloadButton > button:hover{
-  box-shadow:0 6px 20px rgba(2,6,23,.08), 0 0 0 4px var(--ring);
-}
-.stButton > button:active, .stDownloadButton > button:active{ transform: translateY(1px); }
-
-/* הודעות הצלחה/אזהרה/שגיאה */
-.stAlert{
-  border-radius:12px !important;
-  box-shadow:0 8px 24px rgba(2,6,23,.06);
-}
-
-/* טבלאות */
-[data-testid="stDataFrame"]{
-  background:rgba(255,255,255,.9);
-  border:1px solid #e2e8f0;
-  border-radius:14px;
-  overflow:hidden;
-}
-
-/* RTL גם בתיבות בחירה/מספר */
-[data-baseweb="select"] *{ direction:rtl; text-align:right; }
-[data-testid="stNumberInput"] input{ text-align:right; }
-
-/* קלאס כללי לשימוש עתידי */
-.kpi{ background:var(--card); border:1px solid #e2e8f0; padding:14px; border-radius:16px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -92,13 +61,13 @@ is_admin_mode = st.query_params.get("admin", ["0"])[0] == "1"
 # ===== מצב מנהל =====
 if is_admin_mode:
     st.title("🔑 גישת מנהל - צפייה בנתונים")
-    password = st.text_input("הכנס סיסמת מנהל:", type="password")
+    password = st.text_input("הכנס סיסמת מנהל", type="password")
     if password == ADMIN_PASSWORD:
         try:
             df = pd.read_csv(CSV_FILE)
             st.success("התחברת בהצלחה ✅")
             st.dataframe(df)
-            st.download_button("📥 הורד CSV", data=df.to_csv(index=False).encode('utf-8-sig'),
+            st.download_button("📥 הורד קובץ CSV", data=df.to_csv(index=False).encode('utf-8-sig'),
                                file_name="mapping_data.csv", mime="text/csv")
         except FileNotFoundError:
             st.warning("⚠ עדיין אין נתונים שנשמרו.")
@@ -116,28 +85,28 @@ st.write("""
 
 with st.form("mapping_form"):
     st.subheader("פרטים אישיים")
-    last_name = st.text_input(":שם משפחה *")
-    first_name = st.text_input(":שם פרטי *")
+    last_name = st.text_input("שם משפחה *")
+    first_name = st.text_input("שם פרטי *")
 
     st.subheader("מוסד והכשרה")
-    institution = st.text_input(":מוסד / שירות ההכשרה *")
-    specialization = st.selectbox(":תחום ההתמחות *", ["Please Select", "חינוך", "בריאות", "רווחה", "אחר"])
+    institution = st.text_input("מוסד / שירות ההכשרה *")
+    specialization = st.selectbox("תחום ההתמחות *", ["בחר מהרשימה", "חינוך", "בריאות", "רווחה", "אחר"])
     specialization_other = ""
     if specialization == "אחר":
-        specialization_other = st.text_input(":אם ציינת אחר, אנא כתוב את תחום ההתמחות *")
+        specialization_other = st.text_input("אם ציינת אחר, אנא כתוב את תחום ההתמחות *")
 
     st.subheader("כתובת מקום ההכשרה")
-    street = st.text_input(":רחוב *")
+    street = st.text_input("רחוב *")
     city = st.text_input("עיר *")
-    postal_code = st.text_input(":מיקוד *")
+    postal_code = st.text_input("מיקוד *")
 
     st.subheader("קליטת סטודנטים")
-    num_students = st.number_input(":מספר סטודנטים שניתן לקלוט השנה *", min_value=0, step=1)
-    continue_mentoring = st.radio("?האם מעוניין/ת להמשיך להדריך השנה *", ["כן", "לא"])
+    num_students = st.number_input("מספר סטודנטים שניתן לקלוט השנה *", min_value=0, step=1)
+    continue_mentoring = st.radio("האם מעוניין/ת להמשיך להדריך השנה *", ["כן", "לא"])
 
     st.subheader("פרטי התקשרות")
-    phone = st.text_input(":טלפון * (לדוגמה: 050-1234567)")
-    email = st.text_input(":כתובת אימייל *")
+    phone = st.text_input("טלפון * (לדוגמה: 050-1234567)")
+    email = st.text_input("כתובת אימייל *")
 
     submit_btn = st.form_submit_button("שלח/י")
 
@@ -151,7 +120,7 @@ if submit_btn:
         errors.append("יש למלא שם פרטי")
     if not institution.strip():
         errors.append("יש למלא מוסד/שירות ההכשרה")
-    if specialization == "Please Select":
+    if specialization == "בחר מהרשימה":
         errors.append("יש לבחור תחום התמחות")
     if specialization == "אחר" and not specialization_other.strip():
         errors.append("יש למלא את תחום ההתמחות")
