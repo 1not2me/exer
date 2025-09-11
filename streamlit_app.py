@@ -1,110 +1,199 @@
-import os
-import google.generativeai as genai
-from dotenv import load_dotenv
-import PyPDF2
-import requests
-from bs4 import BeautifulSoup
-import textwrap  # לעיצוב פסקאות במסך
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+import re
 
-# Load API key from .env file
-load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+# ===== הגדרות =====
+st.set_page_config(page_title="מיפוי מדריכים לשיבוץ סטודנטים - תשפ\"ו", layout="centered")
+ADMIN_PASSWORD = "rawan_0304"
+CSV_FILE = "mapping_data.csv"
 
-# Create Gemini Pro model
-model = genai.GenerativeModel("gemini-1.5-flash")
+# ===== עיצוב (בלבד) =====
+st.markdown("""
+<style>
+:root{
+  --ink:#0f172a; 
+  --muted:#475569; 
+  --ring:rgba(99,102,241,.25); 
+  --card:rgba(255,255,255,.85);
+}
 
-# Extract text from a PDF file
-def extract_text_from_pdf(pdf_path):
-    text = ""
-    try:
-        with open(pdf_path, 'rb') as file:
-            reader = PyPDF2.PdfReader(file)
-            for page in reader.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text += page_text
-    except FileNotFoundError:
-        return "Error: PDF file not found."
-    except Exception as e:
-        return f"Error while processing PDF: {e}"
-    return text
+/* פונטים ו־RTL כללי */
+html, body, [class*="css"] { font-family: system-ui, "Segoe UI", Arial; }
+.stApp, .main, [data-testid="stSidebar"]{ direction:rtl; text-align:right; }
 
-# Extract text from a web URL
-def extract_text_from_url(url):
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.content, 'html.parser')
-        text_parts = soup.find_all('p')
-        return '\n'.join([p.get_text() for p in text_parts])
-    except Exception as e:
-        return f"Error while fetching URL: {e}"
+/* רקע רך עם גרדיאנטים */
+[data-testid="stAppViewContainer"]{
+  background:
+    radial-gradient(1200px 600px at 8% 8%, #e0f7fa 0%, transparent 65%),
+    radial-gradient(1000px 500px at 92% 12%, #ede7f6 0%, transparent 60%),
+    radial-gradient(900px 500px at 20% 90%, #fff3e0 0%, transparent 55%);
+}
 
-# Summarize text with Gemini using selected length and format
-def summarize_with_gemini(text, length="short", format="paragraph"):
-    try:
-        chat = model.start_chat()
-        if format == "bullets":
-            prompt = (
-                f"Summarize the following text in a {length} style. "
-                f"Present the summary as bullet points – one idea per line:\n\n{text}"
-            )
-        else:
-            prompt = f"Summarize the following text in a {length} style as a paragraph:\n\n{text}"
+/* מרווחי תוכן */
+.block-container{ padding-top:1.1rem; }
 
-        response = chat.send_message(prompt)
-        return response.text
-    except Exception as e:
-        return f"Error while summarizing with Gemini: {e}"
+/* מסגור לטופס */
+[data-testid="stForm"]{
+  background:var(--card);
+  border:1px solid #e2e8f0;
+  border-radius:16px;
+  padding:18px 20px;
+  box-shadow:0 8px 24px rgba(2,6,23,.06);
+}
 
-# Format paragraph nicely with line breaks every X characters
-def format_paragraph(text, width=100):
-    return "\n".join(textwrap.wrap(text, width=width))
+/* כותרות ומפרידים */
+h1, h2, h3, h4 { color:var(--ink); margin-top:.4rem; }
+hr{ border:none; border-top:1px solid #e2e8f0; margin:8px 0 16px; }
 
-# Main function
-def main():
-    source_type = input("Enter 'file' to upload a document or 'url' to use a web address: ").lower()
+/* תוויות ווידג'טים לימין */
+[data-testid="stWidgetLabel"] p{ text-align:right; margin-bottom:.25rem; color:var(--muted); }
+input, textarea, select{ direction:rtl; text-align:right; }
 
-    if source_type == 'file':
-        file_path = input("Enter the path to the file (PDF or TXT): ").strip().strip('"')
-        if file_path.lower().endswith('.pdf'):
-            text = extract_text_from_pdf(file_path)
-        elif file_path.lower().endswith('.txt'):
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    text = f.read()
-            except Exception as e:
-                text = f"Error while reading TXT file: {e}"
-        else:
-            text = "Error: Unsupported file format."
-    elif source_type == 'url':
-        url = input("Enter the web address: ").strip().strip('"')
-        text = extract_text_from_url(url)
+/* כפתורים (שליחה/הורדה) */
+.stButton > button, .stDownloadButton > button{
+  border:1px solid #e2e8f0;
+  border-radius:12px;
+  padding:.55rem 1rem;
+  background:#ffffff;
+  transition: box-shadow .2s, transform .02s;
+}
+.stButton > button:hover, .stDownloadButton > button:hover{
+  box-shadow:0 6px 20px rgba(2,6,23,.08), 0 0 0 4px var(--ring);
+}
+.stButton > button:active, .stDownloadButton > button:active{ transform: translateY(1px); }
+
+/* הודעות הצלחה/אזהרה/שגיאה */
+.stAlert{
+  border-radius:12px !important;
+  box-shadow:0 8px 24px rgba(2,6,23,.06);
+}
+
+/* טבלאות */
+[data-testid="stDataFrame"]{
+  background:rgba(255,255,255,.9);
+  border:1px solid #e2e8f0;
+  border-radius:14px;
+  overflow:hidden;
+}
+
+/* RTL גם בתיבות בחירה/מספר */
+[data-baseweb="select"] *{ direction:rtl; text-align:right; }
+[data-testid="stNumberInput"] input{ text-align:right; }
+
+/* קלאס כללי לשימוש עתידי */
+.kpi{ background:var(--card); border:1px solid #e2e8f0; padding:14px; border-radius:16px; }
+</style>
+""", unsafe_allow_html=True)
+
+# בדיקה אם המשתמש במצב מנהל
+is_admin_mode = st.query_params.get("admin", ["0"])[0] == "1"
+
+# ===== מצב מנהל =====
+if is_admin_mode:
+    st.title("🔑 גישת מנהל - צפייה בנתונים")
+    password = st.text_input("הכנס סיסמת מנהל:", type="password")
+    if password == ADMIN_PASSWORD:
+        try:
+            df = pd.read_csv(CSV_FILE)
+            st.success("התחברת בהצלחה ✅")
+            st.dataframe(df)
+            st.download_button("📥 הורד CSV", data=df.to_csv(index=False).encode('utf-8-sig'),
+                               file_name="mapping_data.csv", mime="text/csv")
+        except FileNotFoundError:
+            st.warning("⚠ עדיין אין נתונים שנשמרו.")
     else:
-        print("Invalid input.")
-        return
+        if password:
+            st.error("סיסמה שגויה")
+    st.stop()
 
-    if text and not text.startswith("Error"):
-        print("\nExtracted text:")
-        lines = text.splitlines()
-        if len(lines) > 10:
-            for line in lines[:10]:
-                print(line)
-            print("...")
-        else:
-            print(text)
+# ===== טופס למילוי =====
+st.title("📋 מיפוי מדריכים לשיבוץ סטודנטים - שנת הכשרה תשפ\"ו")
+st.write("""
+שלום רב, מטרת טופס זה היא לאסוף מידע עדכני על מדריכים ומוסדות הכשרה לקראת שיבוץ הסטודנטים לשנת ההכשרה הקרובה.  
+אנא מלא/י את כל השדות בצורה מדויקת. המידע ישמש לצורך תכנון השיבוץ בלבד.
+""")
 
-        summary_length = input("Enter summary length (short / medium / detailed): ").lower()
-        summary_format = input("Enter summary format (paragraph / bullets): ").lower()
-        summary = summarize_with_gemini(text, length=summary_length, format=summary_format)
+with st.form("mapping_form"):
+    st.subheader("פרטים אישיים")
+    last_name = st.text_input(":שם משפחה *")
+    first_name = st.text_input(":שם פרטי *")
 
-        print("\nSummary:")
-        if summary_format == "paragraph":
-            print(format_paragraph(summary))
-        else:
-            print(summary)
+    st.subheader("מוסד והכשרה")
+    institution = st.text_input(":מוסד / שירות ההכשרה *")
+    specialization = st.selectbox(":תחום ההתמחות *", ["Please Select", "חינוך", "בריאות", "רווחה", "אחר"])
+    specialization_other = ""
+    if specialization == "אחר":
+        specialization_other = st.text_input(":אם ציינת אחר, אנא כתוב את תחום ההתמחות *")
+
+    st.subheader("כתובת מקום ההכשרה")
+    street = st.text_input(":רחוב *")
+    city = st.text_input("עיר *")
+    postal_code = st.text_input(":מיקוד *")
+
+    st.subheader("קליטת סטודנטים")
+    num_students = st.number_input(":מספר סטודנטים שניתן לקלוט השנה *", min_value=0, step=1)
+    continue_mentoring = st.radio("?האם מעוניין/ת להמשיך להדריך השנה *", ["כן", "לא"])
+
+    st.subheader("פרטי התקשרות")
+    phone = st.text_input(":טלפון * (לדוגמה: 050-1234567)")
+    email = st.text_input(":כתובת אימייל *")
+
+    submit_btn = st.form_submit_button("שלח/י")
+
+# ===== טיפול בטופס =====
+if submit_btn:
+    errors = []
+
+    if not last_name.strip():
+        errors.append("יש למלא שם משפחה")
+    if not first_name.strip():
+        errors.append("יש למלא שם פרטי")
+    if not institution.strip():
+        errors.append("יש למלא מוסד/שירות ההכשרה")
+    if specialization == "Please Select":
+        errors.append("יש לבחור תחום התמחות")
+    if specialization == "אחר" and not specialization_other.strip():
+        errors.append("יש למלא את תחום ההתמחות")
+    if not street.strip():
+        errors.append("יש למלא רחוב")
+    if not city.strip():
+        errors.append("יש למלא עיר")
+    if not postal_code.strip():
+        errors.append("יש למלא מיקוד")
+    if num_students <= 0:
+        errors.append("יש להזין מספר סטודנטים גדול מ-0")
+    if not re.match(r"^0\\d{1,2}-\\d{6,7}$", phone.strip()):
+        errors.append("מספר הטלפון אינו תקין")
+    if not re.match(r"[^@]+@[^@]+\\.[^@]+", email.strip()):
+        errors.append("כתובת האימייל אינה תקינה")
+
+    if errors:
+        for e in errors:
+            st.error(e)
     else:
-        print(text)
+        data = {
+            "תאריך": [datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
+            "שם משפחה": [last_name],
+            "שם פרטי": [first_name],
+            "מוסד/שירות ההכשרה": [institution],
+            "תחום התמחות": [specialization_other if specialization == "אחר" else specialization],
+            "רחוב": [street],
+            "עיר": [city],
+            "מיקוד": [postal_code],
+            "מספר סטודנטים": [num_students],
+            "המשך הדרכה": [continue_mentoring],
+            "טלפון": [phone],
+            "אימייל": [email]
+        }
 
-if __name__ == "__main__":
-    main()
+        df = pd.DataFrame(data)
+
+        try:
+            existing_df = pd.read_csv(CSV_FILE)
+            updated_df = pd.concat([existing_df, df], ignore_index=True)
+            updated_df.to_csv(CSV_FILE, index=False)
+        except FileNotFoundError:
+            df.to_csv(CSV_FILE, index=False)
+
+        st.success("✅ הנתונים נשמרו בהצלחה!")
