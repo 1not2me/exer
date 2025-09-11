@@ -52,6 +52,16 @@ html, body, [class*="css"] { font-family: system-ui, "Segoe UI", Arial; }
 [data-testid="stWidgetLabel"] p{ text-align:right; margin-bottom:.25rem; color:var(--muted); }
 [data-testid="stWidgetLabel"] p::after{ content:" :"; }
 input, textarea, select{ direction:rtl; text-align:right; }
+
+/* ניווט עליון */
+.navbar{
+  display:flex; gap:.5rem; margin-bottom:1rem; justify-content:flex-start; align-items:center;
+}
+.navbtn{
+  border:1px solid #e2e8f0; background: white; padding:.45rem .8rem; border-radius:10px;
+  cursor:pointer; font-size:.95rem;
+}
+.navbtn.active{ background:#eef2ff; border-color:#c7d2fe; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -64,10 +74,7 @@ def atomic_write_csv(df: pd.DataFrame, path: Path):
     shutil.move(tmp_path, path)
 
 def to_excel_rtl(df: pd.DataFrame, file_path: Path) -> bytes:
-    """
-    יוצר XLSX עם RTL אם openpyxl זמינה.
-    אם אין openpyxl — זורק ValueError (כדי שניפול לגיבוי CSV במקום להקריס את האפליקציה).
-    """
+    """יוצר XLSX עם RTL אם openpyxl זמינה; אחרת ValueError."""
     if not HAS_OPENPYXL:
         raise ValueError("openpyxl לא מותקנת — יצוא XLSX מבוטל. השתמשי ב-CSV או התקיני openpyxl.")
     with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
@@ -101,7 +108,7 @@ def save_persistent(new_rows: pd.DataFrame) -> pd.DataFrame:
     """
     מוסיף שורות חדשות, משמר היסטוריה, יוצר גיבוי:
     - תמיד CSV מצטבר (atomic) ב-data/mapping_data.csv
-    - גיבוי XLSX ימומש רק אם openpyxl זמינה; אחרת נשמור גיבוי CSV עם חותמת זמן
+    - גיבוי XLSX ימומש רק אם openpyxl זמינה; אחרת גיבוי CSV עם חותמת זמן
     """
     if CSV_FILE.exists():
         existing = pd.read_csv(CSV_FILE)
@@ -127,7 +134,6 @@ def save_persistent(new_rows: pd.DataFrame) -> pd.DataFrame:
         try:
             to_excel_rtl(combined, backup_xlsx)
         except Exception:
-            # fallback אם הייתה תקלה כלשהי ביצוא ה-XLSX
             backup_csv = BACKUP_DIR / f"mapping_backup_{timestamp}.csv"
             atomic_write_csv(combined, backup_csv)
     else:
@@ -136,133 +142,176 @@ def save_persistent(new_rows: pd.DataFrame) -> pd.DataFrame:
 
     return combined
 
-# ============== זיהוי מצב מנהל ==============
-# ניתן להיכנס למצב מנהל עם ?admin=1 בכתובת
-try:
-    is_admin_mode = st.query_params.get("admin", ["0"])[0] == "1"
-except Exception:
-    # תאימות לגרסאות ישנות יותר של Streamlit
-    is_admin_mode = st.experimental_get_query_params().get("admin", ["0"])[0] == "1"
+# ============== נווט: קריאת/כתיבת פרמטרי URL ==============
+def get_query_params():
+    try:
+        return st.query_params
+    except Exception:
+        # תאימות לגרסאות ישנות
+        return st.experimental_get_query_params()
 
-# ============== מצב מנהל ==============
-if is_admin_mode:
+def set_query_params(**kwargs):
+    try:
+        st.query_params.clear()
+        for k, v in kwargs.items():
+            st.query_params[k] = v
+    except Exception:
+        st.experimental_set_query_params(**kwargs)
+
+# ============== רכיב ניווט עליון ==============
+def navbar(current: str):
+    st.markdown('<div class="navbar">', unsafe_allow_html=True)
+    colA, colB, _ = st.columns([1,1,6])
+    with colA:
+        if st.button("📋 טופס מיפוי", type="secondary", use_container_width=True):
+            set_query_params(page="form")
+            st.rerun()
+    with colB:
+        if st.button("🔑 עמוד מנהל", type="secondary", use_container_width=True):
+            set_query_params(page="admin")
+            st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+    # סימון כפתור פעיל (ויזואלי בלבד)
+    st.markdown(f"""
+    <script>
+    const btns = window.parent.document.querySelectorAll('button[kind="secondary"]');
+    if(btns.length>=2){{
+        btns[{0 if current=='form' else 1}].classList.add('navbtn','active');
+        btns[{1 if current=='form' else 0}].classList.add('navbtn');
+    }}
+    </script>
+    """, unsafe_allow_html=True)
+
+# ============== עמוד: מנהל ==============
+def render_admin_page():
+    navbar("admin")
     st.title("🔑 גישת מנהל - צפייה וייצוא נתונים")
     password = st.text_input("הכנס סיסמת מנהל", type="password")
 
-    if password == ADMIN_PASSWORD:
-        try:
-            df = pd.read_csv(CSV_FILE)
-            # סדר עמודות קבוע
-            for c in COLUMNS:
-                if c not in df.columns: df[c] = ""
-            df = df[COLUMNS]
-
-            st.success("התחברת בהצלחה ✅")
-            st.dataframe(df, use_container_width=True)
-
-            col1, col2, col3 = st.columns([1,1,5], gap="small")
-            # כפתור XLSX (אם openpyxl מותקנת)
-            if HAS_OPENPYXL:
-                with col1:
-                    st.download_button(
-                        "📥 הורד XLSX (מימין לשמאל)",
-                        data=make_excel_bytes(df),
-                        file_name="mapping_data_rtl.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
-            else:
-                with col1:
-                    st.info("להורדת XLSX: הוסיפי openpyxl ל-requirements.txt. זמנית זמין CSV.")
-
-            # כפתור CSV
-            with col2:
-                st.download_button(
-                    "⬇️ הורד CSV",
-                    data=df.to_csv(index=False).encode('utf-8-sig'),
-                    file_name="mapping_data.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-
-            st.caption("כל שליחה שומרת **CSV מצטבר** + גיבוי אוטומטי בתיקיית data/backups "
-                       + ("(כולל XLSX)" if HAS_OPENPYXL else "(ללא XLSX עד להתקנת openpyxl)"))
-
-        except FileNotFoundError:
-            st.warning("⚠ עדיין אין נתונים שנשמרו.")
-    else:
+    if password != ADMIN_PASSWORD:
         if password:
             st.error("סיסמה שגויה")
-    st.stop()
+        st.stop()
 
-# ============== טופס למילוי ==============
-st.title('📋 מיפוי מדריכים לשיבוץ סטודנטים - שנת הכשרה תשפ"ו')
-st.write("""
-שלום רב, מטרת טופס זה היא לאסוף מידע עדכני על מדריכים ומוסדות הכשרה לקראת שיבוץ הסטודנטים לשנת ההכשרה הקרובה.  
-אנא מלא/י את כל השדות בצורה מדויקת. המידע ישמש לצורך תכנון השיבוץ בלבד.
-""")
+    try:
+        df = pd.read_csv(CSV_FILE)
+    except FileNotFoundError:
+        st.warning("⚠ עדיין אין נתונים שנשמרו.")
+        st.stop()
 
-with st.form("mapping_form"):
-    st.subheader("פרטים אישיים")
-    last_name = st.text_input("שם משפחה *")
-    first_name = st.text_input("שם פרטי *")
+    # סדר עמודות קבוע
+    for c in COLUMNS:
+        if c not in df.columns: df[c] = ""
+    df = df[COLUMNS]
 
-    st.subheader("מוסד והכשרה")
-    institution = st.text_input("מוסד / שירות ההכשרה *")
-    specialization = st.selectbox("תחום ההתמחות *", ["בחר מהרשימה", "חינוך", "בריאות", "רווחה", "אחר"])
-    specialization_other = ""
-    if specialization == "אחר":
-        specialization_other = st.text_input("אם ציינת אחר, אנא כתוב את תחום ההתמחות *")
+    st.success("התחברת בהצלחה ✅")
+    st.dataframe(df, use_container_width=True)
 
-    st.subheader("כתובת מקום ההכשרה")
-    street = st.text_input("רחוב *")
-    city = st.text_input("עיר *")
-    postal_code = st.text_input("מיקוד *")
-
-    st.subheader("קליטת סטודנטים")
-    num_students = st.number_input("מספר סטודנטים שניתן לקלוט השנה *", min_value=0, step=1)
-    continue_mentoring = st.radio("האם מעוניין/ת להמשיך להדריך השנה *", ["כן", "לא"], horizontal=True)
-
-    st.subheader("פרטי התקשרות")
-    phone = st.text_input("טלפון * (לדוגמה: 050-1234567)")
-    email = st.text_input("כתובת אימייל *")
-
-    submit_btn = st.form_submit_button("שלח/י")
-
-# ============== טיפול בטופס ==============
-if submit_btn:
-    errors = []
-    if not last_name.strip(): errors.append("יש למלא שם משפחה")
-    if not first_name.strip(): errors.append("יש למלא שם פרטי")
-    if not institution.strip(): errors.append("יש למלא מוסד/שירות ההכשרה")
-    if specialization == "בחר מהרשימה": errors.append("יש לבחור תחום התמחות")
-    if specialization == "אחר" and not specialization_other.strip(): errors.append("יש למלא את תחום ההתמחות")
-    if not street.strip(): errors.append("יש למלא רחוב")
-    if not city.strip(): errors.append("יש למלא עיר")
-    if not postal_code.strip(): errors.append("יש למלא מיקוד")
-    if num_students <= 0: errors.append("יש להזין מספר סטודנטים גדול מ-0")
-    if not re.match(r"^0\d{1,2}-\d{6,7}$", phone.strip()): errors.append("מספר הטלפון אינו תקין")
-    if not re.match(r"[^@]+@[^@]+\.[^@]+", email.strip()): errors.append("כתובת האימייל אינה תקינה")
-
-    if errors:
-        for e in errors:
-            st.error(e)
+    col1, col2, col3 = st.columns([1,1,5], gap="small")
+    if HAS_OPENPYXL:
+        with col1:
+            st.download_button(
+                "📥 הורד XLSX (מימין לשמאל)",
+                data=make_excel_bytes(df),
+                file_name="mapping_data_rtl.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
     else:
-        data = {
-            "תאריך": [datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
-            "שם משפחה": [last_name],
-            "שם פרטי": [first_name],
-            "מוסד/שירות ההכשרה": [institution],
-            "תחום התמחות": [specialization_other if specialization == "אחר" else specialization],
-            "רחוב": [street],
-            "עיר": [city],
-            "מיקוד": [postal_code],
-            "מספר סטודנטים": [int(num_students)],
-            "המשך הדרכה": [continue_mentoring],
-            "טלפון": [phone],
-            "אימייל": [email]
-        }
-        new_df = pd.DataFrame(data)
-        save_persistent(new_df)  # מוסיף, לא מוחק, יוצר גיבוי
+        with col1:
+            st.info("להורדת XLSX: הוסיפי openpyxl ל-requirements.txt. זמנית זמין CSV.")
 
-        st.success("✅ הנתונים נשמרו בהצלחה! ניתן להמשיך למלא טפסים נוספים.")
+    with col2:
+        st.download_button(
+            "⬇️ הורד CSV",
+            data=df.to_csv(index=False).encode('utf-8-sig'),
+            file_name="mapping_data.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
+    st.caption("כל שליחה שומרת **CSV מצטבר** + גיבוי אוטומטי בתיקיית data/backups "
+               + ("(כולל XLSX)" if HAS_OPENPYXL else "(ללא XLSX עד להתקנת openpyxl)"))
+
+# ============== עמוד: טופס ==============
+def render_form_page():
+    navbar("form")
+    st.title('📋 מיפוי מדריכים לשיבוץ סטודנטים - שנת הכשרה תשפ"ו')
+    st.write("""
+    שלום רב, מטרת טופס זה היא לאסוף מידע עדכני על מדריכים ומוסדות הכשרה לקראת שיבוץ הסטודנטים לשנת ההכשרה הקרובה.  
+    אנא מלא/י את כל השדות בצורה מדויקת. המידע ישמש לצורך תכנון השיבוץ בלבד.
+    """)
+
+    with st.form("mapping_form"):
+        st.subheader("פרטים אישיים")
+        last_name = st.text_input("שם משפחה *")
+        first_name = st.text_input("שם פרטי *")
+
+        st.subheader("מוסד והכשרה")
+        institution = st.text_input("מוסד / שירות ההכשרה *")
+        specialization = st.selectbox("תחום ההתמחות *", ["בחר מהרשימה", "חינוך", "בריאות", "רווחה", "אחר"])
+        specialization_other = ""
+        if specialization == "אחר":
+            specialization_other = st.text_input("אם ציינת אחר, אנא כתוב את תחום ההתמחות *")
+
+        st.subheader("כתובת מקום ההכשרה")
+        street = st.text_input("רחוב *")
+        city = st.text_input("עיר *")
+        postal_code = st.text_input("מיקוד *")
+
+        st.subheader("קליטת סטודנטים")
+        num_students = st.number_input("מספר סטודנטים שניתן לקלוט השנה *", min_value=0, step=1)
+        continue_mentoring = st.radio("האם מעוניין/ת להמשיך להדריך השנה *", ["כן", "לא"], horizontal=True)
+
+        st.subheader("פרטי התקשרות")
+        phone = st.text_input("טלפון * (לדוגמה: 050-1234567)")
+        email = st.text_input("כתובת אימייל *")
+
+        submit_btn = st.form_submit_button("שלח/י")
+
+    if submit_btn:
+        errors = []
+        if not last_name.strip(): errors.append("יש למלא שם משפחה")
+        if not first_name.strip(): errors.append("יש למלא שם פרטי")
+        if not institution.strip(): errors.append("יש למלא מוסד/שירות ההכשרה")
+        if specialization == "בחר מהרשימה": errors.append("יש לבחור תחום התמחות")
+        if specialization == "אחר" and not specialization_other.strip(): errors.append("יש למלא את תחום ההתמחות")
+        if not street.strip(): errors.append("יש למלא רחוב")
+        if not city.strip(): errors.append("יש למלא עיר")
+        if not postal_code.strip(): errors.append("יש למלא מיקוד")
+        if num_students <= 0: errors.append("יש להזין מספר סטודנטים גדול מ-0")
+        if not re.match(r"^0\d{1,2}-\d{6,7}$", phone.strip()): errors.append("מספר הטלפון אינו תקין")
+        if not re.match(r"[^@]+@[^@]+\.[^@]+", email.strip()): errors.append("כתובת האימייל אינה תקינה")
+
+        if errors:
+            for e in errors:
+                st.error(e)
+        else:
+            data = {
+                "תאריך": [datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
+                "שם משפחה": [last_name],
+                "שם פרטי": [first_name],
+                "מוסד/שירות ההכשרה": [institution],
+                "תחום התמחות": [specialization_other if specialization == "אחר" else specialization],
+                "רחוב": [street],
+                "עיר": [city],
+                "מיקוד": [postal_code],
+                "מספר סטודנטים": [int(num_students)],
+                "המשך הדרכה": [continue_mentoring],
+                "טלפון": [phone],
+                "אימייל": [email]
+            }
+            new_df = pd.DataFrame(data)
+            save_persistent(new_df)  # מוסיף, לא מוחק, יוצר גיבוי
+            st.success("✅ הנתונים נשמרו בהצלחה! ניתן להמשיך למלא טפסים נוספים.")
+
+# ============== Router ==============
+params = get_query_params()
+page = (params.get("page", ["form"])[0] if isinstance(params, dict) else str(params.get("page", "form")))
+if page not in {"form", "admin"}:
+    page = "form"
+
+if page == "admin":
+    render_admin_page()
+else:
+    render_form_page()
