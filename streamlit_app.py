@@ -55,8 +55,7 @@ input, textarea, select{ direction:rtl; text-align:right; }
 </style>
 """, unsafe_allow_html=True)
 
-# ===== מצב מנהל (באמצעות פרמטר כתובת) =====
-# שימוש תואם גרסאות: st.query_params מחזיר Mapping[str, str]
+# ===== מצב מנהל =====
 is_admin_mode = (st.query_params.get("admin", "0") == "1")
 
 if is_admin_mode:
@@ -100,7 +99,9 @@ with st.form("mapping_form"):
         specialization_other = st.text_input("אם ציינת אחר, אנא כתוב את תחום ההתמחות *")
 
     st.subheader("כתובת מקום ההכשרה")
+    internship_place = st.text_input("שם מקום ההתמחות *")   # ➕ שדה חדש
     street = st.text_input("רחוב *")
+    internship_city = st.text_input("עיר כתובת ההתמחות *")   # ➕ שדה חדש
     city = st.text_input("עיר *")
     postal_code = st.text_input("מיקוד *")
 
@@ -118,7 +119,6 @@ with st.form("mapping_form"):
 if submit_btn:
     errors = []
 
-    # ולידציות בסיסיות
     if not last_name.strip():
         errors.append("יש למלא שם משפחה")
     if not first_name.strip():
@@ -129,20 +129,20 @@ if submit_btn:
         errors.append("יש לבחור תחום התמחות")
     if specialization == "אחר" and not specialization_other.strip():
         errors.append("יש למלא את תחום ההתמחות")
+    if not internship_place.strip():
+        errors.append("יש למלא שם מקום ההתמחות")
     if not street.strip():
         errors.append("יש למלא רחוב")
+    if not internship_city.strip():
+        errors.append("יש למלא עיר כתובת ההתמחות")
     if not city.strip():
         errors.append("יש למלא עיר")
     if not postal_code.strip():
         errors.append("יש למלא מיקוד")
     if num_students <= 0:
         errors.append("יש להזין מספר סטודנטים גדול מ-0")
-
-    # טלפון ישראלי פשוט: 0 + 1–2 ספרות קידומת, מקף, ואז 6–7 ספרות
     if not re.match(r"^0\d{1,2}-\d{6,7}$", phone.strip()):
         errors.append("מספר הטלפון אינו תקין (פורמט מומלץ: 050-1234567)")
-
-    # אימייל בסיסי
     if not re.match(r"^[^@]+@[^@]+\.[^@]+$", email.strip()):
         errors.append("כתובת האימייל אינה תקינה")
 
@@ -150,15 +150,14 @@ if submit_btn:
         for e in errors:
             st.error(e)
     else:
-        # בניית המילון לשמירה כולל השדות החדשים
         data = {
             "תאריך": [datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
             "שם משפחה": [last_name],
             "שם פרטי": [first_name],
             "מוסד/שירות ההכשרה": [institution],
             "תחום התמחות": [specialization_other if specialization == "אחר" else specialization],
-            "שם מקום ההתמחות": [institution],   # שדה חדש (שם המקום)
-            "עיר כתובת ההתמחות": [city],         # שדה חדש (עיר הכתובת)
+            "שם מקום ההתמחות": [internship_place],   # ➕ שמירה בקובץ
+            "עיר כתובת ההתמחות": [internship_city],   # ➕ שמירה בקובץ
             "רחוב": [street],
             "עיר": [city],
             "מיקוד": [postal_code],
@@ -170,7 +169,6 @@ if submit_btn:
 
         df = pd.DataFrame(data)
 
-        # שמירה/עדכון לקובץ CSV
         try:
             existing_df = pd.read_csv(CSV_FILE)
             updated_df = pd.concat([existing_df, df], ignore_index=True)
