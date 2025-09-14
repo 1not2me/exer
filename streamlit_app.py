@@ -14,13 +14,125 @@ st.set_page_config(page_title="מערכת שיבוץ סטודנטים – התא
 # =========================
 st.markdown("""
 <style>
-.stApp, .main, [data-testid="stSidebar"]{ direction:rtl; text-align:right; }
-.main .block-container{ max-width: 1200px; }
+@font-face {
+  font-family:'David';
+  src:url('https://example.com/David.ttf') format('truetype');
+}
+html, body, [class*="css"] {
+  font-family:'David',sans-serif!important;
+}
+
+/* ====== עיצוב מודרני + RTL ====== */
+:root{
+  --bg-1:#e0f7fa;
+  --bg-2:#ede7f6;
+  --bg-3:#fff3e0;
+  --bg-4:#fce4ec;
+  --bg-5:#e8f5e9;
+  --ink:#0f172a;
+  --primary:#9b5de5;
+  --primary-700:#f15bb5;
+  --ring:rgba(155,93,229,.35);
+}
+
+[data-testid="stAppViewContainer"]{
+  background:
+    radial-gradient(1200px 600px at 15% 10%, var(--bg-2) 0%, transparent 70%),
+    radial-gradient(1000px 700px at 85% 20%, var(--bg-3) 0%, transparent 70%),
+    radial-gradient(900px 500px at 50% 80%, var(--bg-4) 0%, transparent 70%),
+    radial-gradient(700px 400px at 10% 85%, var(--bg-5) 0%, transparent 70%),
+    linear-gradient(135deg, var(--bg-1) 0%, #ffffff 100%) !important;
+  color: var(--ink);
+}
+
+.main .block-container{
+  background: rgba(255,255,255,.78);
+  backdrop-filter: blur(10px);
+  border:1px solid rgba(15,23,42,.08);
+  box-shadow:0 15px 35px rgba(15,23,42,.08);
+  border-radius:24px;
+  padding:2.5rem;
+  margin-top:1rem;
+}
+
+/* כותרות */
+h1,h2,h3,.stMarkdown h1,.stMarkdown h2{
+  text-align:center;
+  letter-spacing:.5px;
+  text-shadow:0 1px 2px rgba(255,255,255,.7);
+  font-weight:700;
+  color:#222;
+  margin-bottom:1rem;
+}
+
+/* כפתור */
+.stButton > button{
+  background:linear-gradient(135deg,var(--primary) 0%,var(--primary-700) 100%)!important;
+  color:#fff!important;
+  border:none!important;
+  border-radius:18px!important;
+  padding:1rem 2rem!important;
+  font-size:1.1rem!important;
+  font-weight:600!important;
+  box-shadow:0 8px 18px var(--ring)!important;
+  transition:all .15s ease!important;
+}
+.stButton > button:hover{ transform:translateY(-3px) scale(1.02); filter:brightness(1.08); }
+.stButton > button:focus{ outline:none!important; box-shadow:0 0 0 4px var(--ring)!important; }
+
+/* קלטים */
+div.stSelectbox > div,
+div.stMultiSelect > div,
+.stTextInput > div > div > input{
+  border-radius:14px!important;
+  border:1px solid rgba(15,23,42,.12)!important;
+  box-shadow:0 3px 10px rgba(15,23,42,.04)!important;
+  padding:.6rem .8rem!important;
+  color:var(--ink)!important;
+  font-size:1rem!important;
+}
+
+/* טאבים – רוחב קטן יותר */
+.stTabs [data-baseweb="tab"]{
+  border-radius:14px!important;
+  background:rgba(255,255,255,.65);
+  margin-inline-start:.3rem;
+  padding:.4rem .8rem;
+  font-weight:600;
+  min-width: 110px !important;
+  text-align:center;
+  font-size:0.9rem !important;
+}
+.stTabs [data-baseweb="tab"]:hover{ background:rgba(255,255,255,.9); }
+
+/* RTL */
+.stApp,.main,[data-testid="stSidebar"]{ direction:rtl; text-align:right; }
+label,.stMarkdown,.stText,.stCaption{ text-align:right!important; }
+
+/* הסתרת טיפ "Press Enter to apply" */
+*[title="Press Enter to apply"]{ display:none !important; }
+
+/* ====== כפתורי הורדה – סגנון "פיל" ====== */
+div.stDownloadButton{ direction:rtl; text-align:right; }
+div.stDownloadButton > button{
+  border:1px solid rgba(15,23,42,.12)!important;
+  border-radius:999px!important;
+  padding:.85rem 1.2rem!important;
+  font-size:1.05rem!important;
+  font-weight:600!important;
+  background:#fff!important;
+  color:#111!important;
+  box-shadow:0 8px 18px rgba(15,23,42,.06)!important;
+  display:inline-flex!important;
+  align-items:center!important;
+  gap:.5rem!important;
+}
+div.stDownloadButton > button:hover{
+  transform:translateY(-1px);
+  box-shadow:0 10px 22px rgba(15,23,42,.08)!important;
+}
 </style>
 """, unsafe_allow_html=True)
-
-st.markdown("<h1 style='text-align:center'>מערכת שיבוץ סטודנטים – התאמה חכמה</h1>", unsafe_allow_html=True)
-st.caption("העלה/י קובצי סטודנטים ואתרי התמחות (CSV/XLSX). התוצאות יבוצעו בעברית וניתן להורידן כ־CSV/XLSX.")
 
 # =========================
 # מודל ניקוד
