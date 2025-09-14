@@ -473,7 +473,6 @@ if run_btn:
         st.error("נא להעלות את שני הקבצים לפני הפעלת השיבוץ.")
     else:
         try:
-            # שימי לב: לא מוחקים שום עמודה (גם לא Unnamed)
             students = resolve_students(df_students_raw)
             sites = resolve_sites(df_sites_raw)
             result_df = greedy_match(students, sites, W)
@@ -518,43 +517,5 @@ if result_df is not None and not result_df.empty:
         st.markdown("### 🏫 מוסדות שלא שובץ אליהם אף סטודנט")
         st.dataframe(unused_sites[["site_name","site_city","site_field","site_capacity"]], use_container_width=True)
 
-else:
-    st.caption("טרם הופעל שיבוץ או שאין תוצאות להצגה.")
-
-
-# ====== 5) תוצאות ======
-st.markdown("## 📊 תוצאות השיבוץ")
-if 'result_df' in locals() and result_df is not None and not result_df.empty:
-    st.dataframe(result_df, use_container_width=True)
-
-    # >>> הוסר כפתור ה-CSV <<<
-
-    # XLSX – כפתור בסגנון התמונה: "הורדת Excel (XLSX)"
-    from io import BytesIO
-    xlsx_io = BytesIO()
-    with pd.ExcelWriter(xlsx_io, engine="xlsxwriter") as writer:
-        result_df.to_excel(writer, index=False, sheet_name="שיבוץ")
-        sht = writer.sheets["שיבוץ"]
-        for i, col in enumerate(result_df.columns):
-            width = max(12, min(40, int(result_df[col].astype(str).map(len).max() if not result_df.empty else 12) + 2))
-            sht.set_column(i, i, width)
-    xlsx_io.seek(0)
-
-    st.download_button(
-        label="הורדת Excel (XLSX)",
-        data=xlsx_io.getvalue(),
-        file_name="student_site_matching.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        key="dl_xlsx",
-        help="excel-like"
-    )
-
-    # שמירת העיצוב של האייקון לכפתור האקסל
-    st.markdown("""
-    <script>
-    const btns = parent.document.querySelectorAll('div.stDownloadButton > button');
-    btns.forEach(b=>{ if(b.title && b.title.includes('excel-like')) b.classList.add('excel-like'); });
-    </script>
-    """, unsafe_allow_html=True)
 else:
     st.caption("טרם הופעל שיבוץ או שאין תוצאות להצגה.")
