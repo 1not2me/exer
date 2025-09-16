@@ -21,9 +21,9 @@ BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
 CSV_FILE = DATA_DIR / "mapping_data.csv"          # קובץ ראשי (נשמר ומעודכן)
 CSV_LOG_FILE = DATA_DIR / "mapping_data_log.csv"  # קובץ יומן הוספות (Append-Only)
-SITES_FILE = DATA_DIR / "sites_catalog.csv"       # אופציונלי: קטלוג מקומות/תחומים
+SITES_FILE = DATA_DIR / "sites_catalog.csv"       # אופציונלי: קטלוג מוסדות/תחומים
 
-# ===== רשימת תחומי התמחות (ניתן לעדכן כאן בהתאם לשאלון הסטודנטים) =====
+# ===== רשימת תחומי התמחות (ניתן לעדכן בהתאם לשאלון הסטודנטים) =====
 SPECIALIZATIONS = [
     "מערכות מידע רפואיות", "בריאות דיגיטלית", "רווחה", "חינוך", "קהילה",
     "סיעוד", "פסיכולוגיה קהילתית", "מנהל מערכות מידע", "ניתוח נתונים", "סיוע טכנולוגי",
@@ -36,7 +36,7 @@ COLUMNS_ORDER = [
     "שם פרטי",
     "שם משפחה",
     "סטטוס מדריך",
-    "מקום הכשרה",
+    "מוסד",
     "תחום התמחות",
     "רחוב",
     "עיר",
@@ -49,7 +49,6 @@ COLUMNS_ORDER = [
 ]
 
 def reorder_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """מציב את העמודות המוכרות לפי הסדר ומוסיף בסוף עמודות נוספות אם יש."""
     known = [c for c in COLUMNS_ORDER if c in df.columns]
     extra = [c for c in df.columns if c not in known]
     return df[known + extra]
@@ -87,7 +86,6 @@ input, textarea, select{ direction:rtl; text-align:right; }
 
 # ===== פונקציות עזר לקבצים =====
 def load_csv_safely(path: Path) -> pd.DataFrame:
-    """קריאה בטוחה של CSV אם קיים, אחרת מחזיר DataFrame ריק."""
     if path.exists():
         try:
             return pd.read_csv(path)
@@ -99,7 +97,6 @@ def load_csv_safely(path: Path) -> pd.DataFrame:
     return pd.DataFrame()
 
 def save_master_dataframe(df: pd.DataFrame) -> None:
-    """שומר את המסד הראשי בצורה אטומית + יוצר גיבוי מתוארך."""
     df = reorder_columns(df.copy())
     temp_path = CSV_FILE.with_suffix(".tmp.csv")
     df.to_csv(temp_path, index=False, encoding="utf-8-sig")
@@ -109,7 +106,6 @@ def save_master_dataframe(df: pd.DataFrame) -> None:
     df.to_csv(backup_path, index=False, encoding="utf-8-sig")
 
 def append_to_log(row_df: pd.DataFrame) -> None:
-    """Append-Only: לעולם לא מוחקים, רק מוסיפים שורה חדשה."""
     row_df = reorder_columns(row_df.copy())
     file_exists = CSV_LOG_FILE.exists()
     row_df.to_csv(
@@ -121,7 +117,6 @@ def append_to_log(row_df: pd.DataFrame) -> None:
     )
 
 def dataframe_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Sheet1") -> bytes:
-    """ממיר DataFrame ל-XLSX בזיכרון (BytesIO)."""
     df = reorder_columns(df.copy())
     bio = BytesIO()
     with pd.ExcelWriter(bio, engine="xlsxwriter") as writer:
@@ -133,11 +128,11 @@ def dataframe_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Sheet1") -> by
     bio.seek(0)
     return bio.read()
 
-# ===== קריאת קטלוג מקומות/תחומים (אופציונלי) =====
+# ===== קריאת קטלוג מוסדות/תחומים (אופציונלי) =====
 def load_sites_catalog() -> pd.DataFrame:
     """
-    מצפה לעמודות: 'שם מוסד' או 'מקום הכשרה', ו'תחום התמחות' (בקטלוג הפנימי),
-    ומשמש להשלמה אוטומטית (תיבות בחירה).
+    מצפה לעמודות: 'מוסד' (או 'שם מוסד'/'מוסד/שירות') ו'תחום התמחות'.
+    מחזיר DataFrame עם עמודות 'מוסד' ו'תחום התמחות'.
     """
     if not SITES_FILE.exists():
         return pd.DataFrame()
@@ -155,38 +150,27 @@ def load_sites_catalog() -> pd.DataFrame:
                 return cols[opt]
         return None
 
-    col_place = pick('מקום הכשרה', 'שם מוסד', 'מוסד', 'שם מוסד/שירות ההכשרה')
-    col_spec  = pick('תחום התמחות', 'תחום', 'התמחות')
+    col_institute = pick('מוסד', 'שם מוסד', 'שם מוסד/שירות ההכשרה', 'Institution')
+    col_spec      = pick('תחום התמחות', 'תחום', 'התמחות', 'Specialization')
 
-    if not col_place or not col_spec:
-        st.warning("⚠ בקטלוג חסרות עמודות חובה: 'מקום הכשרה/שם מוסד' ו'תחום התמחות'. הטופס יעבוד במצב קלט חופשי.")
+    if not col_institute or not col_spec:
+        st.warning("⚠ בקטלוג חסרות עמודות חובה: 'מוסד' ו'תחום התמחות'. הטופס יעבוד במצב קלט חופשי.")
         return pd.DataFrame()
 
     clean = (
-        df[[col_place, col_spec]]
-        .rename(columns={col_place: 'מקום הכשרה', col_spec: 'תחום התמחות'})
+        df[[col_institute, col_spec]]
+        .rename(columns={col_institute: 'מוסד', col_spec: 'תחום התמחות'})
         .dropna().drop_duplicates().reset_index(drop=True)
     )
-
-    for c in ['מקום הכשרה', 'תחום התמחות']:
+    for c in ['מוסד', 'תחום התמחות']:
         clean[c] = clean[c].astype(str).str.strip()
-
     return clean
 
 sites_df = load_sites_catalog()
 sites_available = not sites_df.empty
 
-# רשימת תחומים לשימוש בטופס:
-if sites_available:
-    known_specs = sorted(sites_df['תחום התמחות'].dropna().unique().tolist())
-else:
-    # אם אין קטלוג – נשתמש ברשימת הקבועים
-    known_specs = SPECIALIZATIONS[:]
-
-if sites_available:
-    known_places = sorted(sites_df['מקום הכשרה'].dropna().unique().tolist())
-else:
-    known_places = []
+known_specs = sorted(sites_df['תחום התמחות'].dropna().unique().tolist()) if sites_available else SPECIALIZATIONS[:]
+known_institutions = sorted(sites_df['מוסד'].dropna().unique().tolist()) if sites_available else []
 
 # ===== בדיקת מצב מנהל =====
 params = st.query_params if hasattr(st, "query_params") else {}
@@ -246,17 +230,15 @@ if is_admin_mode:
 # ===== טופס למילוי =====
 st.title("📋 מיפוי מדריכים לשיבוץ סטודנטים - שנת הכשרה תשפ\"ו")
 st.write("""
-שלום רב, מטרת טופס זה היא לאסוף מידע עדכני על מדריכים ומקומות הכשרה לקראת שיבוץ הסטודנטים לשנה הקרובה.  
+שלום רב, מטרת טופס זה היא לאסוף מידע עדכני על מדריכים ומוסדות לקראת שיבוץ הסטודנטים לשנה הקרובה.  
 אנא מלא/י את כל השדות בצורה מדויקת. המידע ישמש לצורך תכנון השיבוץ בלבד.
 """)
 
 with st.form("mapping_form"):
     st.subheader("פרטים אישיים")
-    # שם פרטי לפני שם משפחה
     first_name = st.text_input("שם פרטי *", key="first_name")
     last_name  = st.text_input("שם משפחה *", key="last_name")
 
-    # סטטוס מדריך: חדש/ממשיך
     mentor_status = st.selectbox(
         "סטטוס מדריך *",
         ["מדריך חדש (נדרש קורס)", "מדריך ממשיך"],
@@ -264,22 +246,21 @@ with st.form("mapping_form"):
         key="mentor_status"
     )
 
-    st.subheader("מקום הכשרה")
-    # תחומי התמחות – מהרשימה שסוכמה/מהקטלוג אם קיים
+    st.subheader("מוסד")
     spec_choice = st.selectbox("תחום התמחות *", ["בחר מהרשימה"] + known_specs, key="specialization")
 
-    # מקום הכשרה – לפי תחום, אם יש קטלוג; אחרת טקסט חופשי
+    # מוסד – מסונן לפי תחום אם יש קטלוג; אחרת טקסט חופשי
     if sites_available and spec_choice in known_specs and spec_choice != "בחר מהרשימה":
-        filtered_places = sorted(
-            sites_df[sites_df['תחום התמחות'] == spec_choice]['מקום הכשרה'].dropna().unique().tolist()
+        filtered_institutions = sorted(
+            sites_df[sites_df['תחום התמחות'] == spec_choice]['מוסד'].dropna().unique().tolist()
         )
-        place_select = st.selectbox("מקום הכשרה *", ["בחר מהרשימה"] + filtered_places, key="place_select")
+        institute_select = st.selectbox("מוסד *", ["בחר מהרשימה"] + filtered_institutions, key="institute_select")
     elif sites_available:
-        place_select = st.selectbox("מקום הכשרה *", ["בחר מהרשימה"] + known_places, key="place_select")
+        institute_select = st.selectbox("מוסד *", ["בחר מהרשימה"] + known_institutions, key="institute_select")
     else:
-        place_select = st.text_input("מקום הכשרה *", key="place_input")
+        institute_select = st.text_input("מוסד *", key="institute_input")
 
-    st.subheader("כתובת מקום ההכשרה")
+    st.subheader("כתובת המוסד")
     street = st.text_input("רחוב *", key="street")
     city = st.text_input("עיר *", key="city")
     postal_code = st.text_input("מיקוד *", key="postal_code")
@@ -317,24 +298,22 @@ if submit_btn:
     if not last_name.strip():
         errors.append("יש למלא 'שם משפחה'")
 
-    # אימות תחום ומקום הכשרה
     if spec_choice == "בחר מהרשימה":
         errors.append("יש לבחור 'תחום התמחות'")
 
     if sites_available:
-        if place_select == "בחר מהרשימה":
-            errors.append("יש לבחור 'מקום הכשרה'")
-        # אם נבחרו תחום + מקום, נוודא התאמה לפי הקטלוג (אם יש חיתוך)
-        if (spec_choice in known_specs) and (place_select in known_places):
+        if institute_select == "בחר מהרשימה":
+            errors.append("יש לבחור 'מוסד'")
+        if (spec_choice in known_specs) and (institute_select in known_institutions):
             ok = not sites_df[(sites_df['תחום התמחות'] == spec_choice) &
-                              (sites_df['מקום הכשרה'] == place_select)].empty
+                              (sites_df['מוסד'] == institute_select)].empty
             if not ok:
-                errors.append("מקום ההכשרה שנבחר אינו תואם ל'תחום התמחות' שבחרת.")
-        final_place = place_select if place_select != "בחר מהרשימה" else ""
+                errors.append("המוסד שנבחר אינו תואם ל'תחום התמחות' שבחרת.")
+        final_institute = institute_select if institute_select != "בחר מהרשימה" else ""
     else:
-        if not place_select.strip():
-            errors.append("יש למלא 'מקום הכשרה'")
-        final_place = place_select.strip()
+        if not institute_select.strip():
+            errors.append("יש למלא 'מוסד'")
+        final_institute = institute_select.strip()
 
     if not street.strip():
         errors.append("יש למלא 'רחוב'")
@@ -343,7 +322,6 @@ if submit_btn:
     if not postal_code.strip():
         errors.append("יש למלא 'מיקוד'")
 
-    # טלפון: 0501234567 / 050-1234567 / 501234567
     phone_clean = phone.strip().replace("-", "").replace(" ", "")
     if not re.match(r"^(0?5\d{8})$", phone_clean):
         errors.append("מספר הטלפון אינו תקין (דוגמה: 0501234567)")
@@ -355,17 +333,13 @@ if submit_btn:
         for e in errors:
             st.error(e)
     else:
-        # ערכים סופיים
-        final_spec = spec_choice
-
-        # רשומה לשמירה (שמות עמודות מעודכנים)
         record = {
             "תאריך": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "שם פרטי": first_name.strip(),
             "שם משפחה": last_name.strip(),
             "סטטוס מדריך": mentor_status,
-            "מקום הכשרה": final_place,
-            "תחום התמחות": final_spec,
+            "מוסד": final_institute,
+            "תחום התמחות": spec_choice,
             "רחוב": street.strip(),
             "עיר": city.strip(),
             "מיקוד": postal_code.strip(),
@@ -377,12 +351,10 @@ if submit_btn:
         }
         new_row_df = pd.DataFrame([record])
 
-        # 1) עדכון הקובץ הראשי + גיבוי
         master_df = load_csv_safely(CSV_FILE)
         master_df = pd.concat([master_df, new_row_df], ignore_index=True)
         save_master_dataframe(master_df)
 
-        # 2) רישום ליומן (Append-Only)
         append_to_log(new_row_df)
 
         st.success("✅ הנתונים נשמרו בהצלחה! תודה רבה 🙏")
