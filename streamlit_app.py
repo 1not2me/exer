@@ -13,6 +13,15 @@ import pandas as pd
 st.set_page_config(page_title="מיפוי מדריכים לשיבוץ סטודנטים - תשפ\"ו", layout="centered")
 ADMIN_PASSWORD = "rawan_0304"
 
+DATA_DIR   = Path("data")
+BACKUP_DIR = DATA_DIR / "backups"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+
+CSV_FILE      = DATA_DIR / "שאלון_שיבוץ.csv"         # קובץ ראשי (מצטבר, לעולם לא מתאפס)
+CSV_LOG_FILE  = DATA_DIR / "שאלון_שיבוץ_log.csv"     # יומן הוספות (Append-Only)
+ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "rawan_0304")  # מומלץ לשים ב-secrets
+
 # ספריית נתונים + קבצים
 DATA_DIR = Path("data")
 BACKUP_DIR = DATA_DIR / "backups"
@@ -130,20 +139,14 @@ def dataframe_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Sheet1") -> by
 
 # ===== קריאת קטלוג מוסדות/תחומים (אופציונלי) =====
 def load_sites_catalog() -> pd.DataFrame:
-    """
-    מצפה לעמודות: 'מוסד' (או 'שם מוסד'/'מוסד/שירות') ו'תחום התמחות'.
-    מחזיר DataFrame עם עמודות 'מוסד' ו'תחום התמחות'.
-    """
     if not SITES_FILE.exists():
         return pd.DataFrame()
-
     df = load_csv_safely(SITES_FILE)
     if df.empty:
         st.warning("⚠ קובץ הקטלוג קיים אך ריק.")
         return pd.DataFrame()
 
     cols = {c.strip(): c for c in df.columns}
-
     def pick(*options):
         for opt in options:
             if opt in cols:
@@ -168,13 +171,15 @@ def load_sites_catalog() -> pd.DataFrame:
 
 sites_df = load_sites_catalog()
 sites_available = not sites_df.empty
-
 known_specs = sorted(sites_df['תחום התמחות'].dropna().unique().tolist()) if sites_available else SPECIALIZATIONS[:]
 known_institutions = sorted(sites_df['מוסד'].dropna().unique().tolist()) if sites_available else []
 
 # ===== בדיקת מצב מנהל =====
-params = st.query_params if hasattr(st, "query_params") else {}
-admin_flag = params.get("admin", "0")
+try:
+    params = st.experimental_get_query_params()
+    admin_flag = params.get("admin", ["0"])[0]
+except Exception:
+    admin_flag = "0"
 is_admin_mode = (admin_flag == "1")
 
 # ===== מצב מנהל =====
@@ -249,7 +254,6 @@ with st.form("mapping_form"):
     st.subheader("מוסד")
     spec_choice = st.selectbox("תחום התמחות *", ["בחר מהרשימה"] + known_specs, key="specialization")
 
-    # מוסד – מסונן לפי תחום אם יש קטלוג; אחרת טקסט חופשי
     if sites_available and spec_choice in known_specs and spec_choice != "בחר מהרשימה":
         filtered_institutions = sorted(
             sites_df[sites_df['תחום התמחות'] == spec_choice]['מוסד'].dropna().unique().tolist()
@@ -292,12 +296,10 @@ with st.form("mapping_form"):
 # ===== טיפול בטופס =====
 if submit_btn:
     errors = []
-
     if not first_name.strip():
         errors.append("יש למלא 'שם פרטי'")
     if not last_name.strip():
         errors.append("יש למלא 'שם משפחה'")
-
     if spec_choice == "בחר מהרשימה":
         errors.append("יש לבחור 'תחום התמחות'")
 
@@ -350,11 +352,9 @@ if submit_btn:
             "אימייל": email.strip()
         }
         new_row_df = pd.DataFrame([record])
-
         master_df = load_csv_safely(CSV_FILE)
         master_df = pd.concat([master_df, new_row_df], ignore_index=True)
         save_master_dataframe(master_df)
-
         append_to_log(new_row_df)
 
         st.success("✅ הנתונים נשמרו בהצלחה! תודה רבה 🙏")
