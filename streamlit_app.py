@@ -1,5 +1,6 @@
-# matcher_streamlit_beauty_rtl_v7_fixed.py 
+# matcher_streamlit_beauty_rtl_v7_fixed.py
 # -*- coding: utf-8 -*-
+import re
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -8,120 +9,6 @@ from dataclasses import dataclass
 from typing import Optional, Any, List
 from math import radians, sin, cos, sqrt, atan2
 
-# ===== חילוץ עיר מהכתובת =====
-def extract_city(address: str) -> str:
-    if pd.isna(address):
-        return ""
-    address = str(address).strip()
-    # ננסה לחלץ לפי פסיק
-    parts = re.split('[,]', address)
-    if len(parts) > 1:
-        return parts[1].strip()
-    return address.split()[-1] if address else ""
-
-# ===== רשימת קואורדינטות ערים בישראל (דוגמה – אפשר להרחיב לקובץ מלא) =====
-cities_coords = {
-    "תל אביב": (32.0853, 34.7818),
-    "חיפה": (32.7940, 34.9896),
-    "עכו": (32.9234, 35.0827),
-    "כרמיאל": (32.9171, 35.3050),
-    "צפת": (32.9646, 35.4960),
-    "נהריה": (33.0058, 35.0940),
-    "רמת גן": (32.0684, 34.8248),
-    "גוליס": (33.0330, 35.3160),
-    "ירושלים": (31.7683, 35.2137)
-}
-
-# ===== פונקציה לחישוב מרחק בין ערים =====
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371.0  # רדיוס כדור הארץ בק"מ
-    dlat = radians(lat2 - lat1)
-    dlon = radians(lon2 - lon1)
-    a = sin(dlat/2)**2 + cos(radians(lat1))*cos(radians(lat2))*sin(dlon/2)**2
-    c = 2 * atan2(sqrt(a), sqrt(1-a))
-    return R * c
-
-def city_distance(city1, city2):
-    if city1 not in cities_coords or city2 not in cities_coords:
-        return None
-    lat1, lon1 = cities_coords[city1]
-    lat2, lon2 = cities_coords[city2]
-    return haversine(lat1, lon1, lat2, lon2)
-
-# ===== פונקציית ניקוד =====
-def compute_score(stu, site):
-    # תחום
-    field_score = 50 if pd.notna(stu.get("תחומים מועדפים")) and \
-                        pd.notna(site.get("תחום התמחות")) and \
-                        str(stu["תחומים מועדפים"]).strip() in str(site["תחום התמחות"]).strip() else 0
-    
-    # בקשה מיוחדת
-    special_score = 45 if pd.notna(stu.get("בקשה מיוחדת")) and \
-                          pd.notna(site.get("בקשות מיוחדות")) and \
-                          any(word in str(site["בקשות מיוחדות"]) 
-                              for word in str(stu["בקשה מיוחדת"]).split()) else 0
-    
-    # עיר לפי מרחק
-    stu_city = str(stu.get("עיר", "")).strip()
-    site_city = str(site.get("עיר", "")).strip()
-    city_score = 0
-    if stu_city and site_city:
-        dist = city_distance(stu_city, site_city)
-        if dist is not None:
-            if dist <= 5:
-                city_score = 5
-            elif dist <= 20:
-                city_score = 3
-            elif dist <= 50:
-                city_score = 1
-            else:
-                city_score = 0
-
-    total_score = field_score + special_score + city_score
-
-    # ציון מינימום 20
-    return max(total_score, 20)
-
-# ===== פונקציית שיבוץ =====
-def match_students_to_sites(students_df, sites_df):
-    # הכנה – חילוץ עיר מתוך כתובת אם צריך
-    if "כתובת" in students_df.columns and "עיר" not in students_df.columns:
-        students_df["עיר"] = students_df["כתובת"].apply(extract_city)
-
-    # בחירת עמודות רלוונטיות
-    students = students_df[[
-        "שם פרטי", "שם משפחה", "תעודת זהות", "עיר", "תחומים מועדפים", "בקשה מיוחדת"
-    ]].copy()
-
-    sites = sites_df[[
-        "מוסד", "תחום התמחות", "עיר", "מספר סטודנטים שניתן לקלוט (1 או 2)", "בקשות מיוחדות"
-    ]].copy()
-
-    results = []
-    for i, stu in students.iterrows():
-        best_match = None
-        best_score = -1
-        for j, site in sites.iterrows():
-            score = compute_score(stu, site)
-            if score > best_score and site["מספר סטודנטים שניתן לקלוט (1 או 2)"] > 0:
-                best_score = score
-                best_match = site
-        if best_match is not None:
-            results.append({
-                "ת\"ז סטודנט": stu["תעודת זהות"],
-                "שם סטודנט": f"{stu['שם פרטי']} {stu['שם משפחה']}",
-                "עיר סטודנט": stu["עיר"],
-                "תחום מועדף": stu["תחומים מועדפים"],
-                "בקשה מיוחדת": stu["בקשה מיוחדת"],
-                "מוסד": best_match["מוסד"],
-                "תחום התמחות במוסד": best_match["תחום התמחות"],
-                "עיר מוסד": best_match["עיר"],
-                "אחוז התאמה": best_score
-            })
-            # עדכון קיבולת מוסד
-            sites.at[best_match.name, "מספר סטודנטים שניתן לקלוט (1 או 2)"] -= 1
-
-    return pd.DataFrame(results)
 # =========================
 # קונפיגורציה כללית
 # =========================
@@ -213,9 +100,11 @@ st.markdown("<p style='text-align:center;color:#475569;margin-top:-8px;'>כאן 
 # ====== מודל ניקוד ======
 @dataclass
 class Weights:
-    w_field: float = 0.50
-    w_city: float = 0.05
-    w_special: float = 0.45
+    w_field: float = 0.50   # 50%
+    w_city: float = 0.05    # 5% (עד 5 נק')
+    w_special: float = 0.45 # 45%
+
+MIN_SCORE = 20  # ציון מינימלי לפי בקשתך
 
 # עמודות סטודנטים
 STU_COLS = {
@@ -242,7 +131,9 @@ SITE_COLS = {
     "sup_last": ["שם משפחה"],
     "phone": ["טלפון"],
     "email": ["אימייל", "כתובת מייל", "דוא\"ל", "דוא״ל"],
-    "review": ["חוות דעת מדריך"]
+    "review": ["חוות דעת מדריך"],
+    # ננסה לאתר עמודת "בקשות מיוחדות" אם קיימת בקובץ האתרים
+    "special": ["בקשות מיוחדות", "בקשה מיוחדת", "דרישות מיוחדות"]
 }
 
 def pick_col(df: pd.DataFrame, options: List[str]) -> Optional[str]:
@@ -263,15 +154,36 @@ def normalize_text(x: Any) -> str:
     if x is None: return ""
     return str(x).strip()
 
+# ===== חילוץ עיר מהכתובת (אם אין עמודת "עיר") =====
+def extract_city(address: str) -> str:
+    if pd.isna(address):
+        return ""
+    address = str(address).strip()
+    parts = re.split(r'[,|/|-]', address)
+    if len(parts) > 1:
+        return parts[-1].strip()
+    toks = address.split()
+    return toks[-1].strip() if toks else ""
+
 # ----- סטודנטים -----
 def resolve_students(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
-    out["stu_id"] = out[pick_col(out, STU_COLS["id"])]
+    out["stu_id"]    = out[pick_col(out, STU_COLS["id"])]
     out["stu_first"] = out[pick_col(out, STU_COLS["first"])]
     out["stu_last"]  = out[pick_col(out, STU_COLS["last"])]
-    out["stu_city"]  = out[pick_col(out, STU_COLS["city"])] if pick_col(out, STU_COLS["city"]) else ""
-    out["stu_pref"]  = out[pick_col(out, STU_COLS["preferred_field"])] if pick_col(out, STU_COLS["preferred_field"]) else ""
-    out["stu_req"]   = out[pick_col(out, STU_COLS["special_req"])] if pick_col(out, STU_COLS["special_req"]) else ""
+
+    city_col = pick_col(out, STU_COLS["city"])
+    if city_col:
+        out["stu_city"] = out[city_col]
+    else:
+        addr_col = pick_col(out, STU_COLS["address"])
+        out["stu_city"] = out[addr_col].apply(extract_city) if addr_col else ""
+
+    pref_col = pick_col(out, STU_COLS["preferred_field"])
+    req_col  = pick_col(out, STU_COLS["special_req"])
+    out["stu_pref"] = out[pref_col] if pref_col else ""
+    out["stu_req"]  = out[req_col]  if req_col  else ""
+
     for c in ["stu_id","stu_first","stu_last","stu_city","stu_pref","stu_req"]:
         out[c] = out[c].apply(normalize_text)
     return out
@@ -282,9 +194,11 @@ def resolve_sites(df: pd.DataFrame) -> pd.DataFrame:
     out["site_name"]  = out[pick_col(out, SITE_COLS["name"])]
     out["site_field"] = out[pick_col(out, SITE_COLS["field"])]
     out["site_city"]  = out[pick_col(out, SITE_COLS["city"])]
+
     cap_col = pick_col(out, SITE_COLS["capacity"])
     out["site_capacity"] = pd.to_numeric(out[cap_col], errors="coerce").fillna(1).astype(int) if cap_col else 1
     out["capacity_left"] = out["site_capacity"].astype(int)
+
     sup_first = pick_col(out, SITE_COLS["sup_first"])
     sup_last  = pick_col(out, SITE_COLS["sup_last"])
     out["שם המדריך"] = ""
@@ -292,27 +206,83 @@ def resolve_sites(df: pd.DataFrame) -> pd.DataFrame:
         ff = out[sup_first] if sup_first else ""
         ll = out[sup_last]  if sup_last else ""
         out["שם המדריך"] = (ff.astype(str) + " " + ll.astype(str)).str.strip()
-    for c in ["site_name","site_field","site_city","שם המדריך"]:
+
+    special_col = pick_col(out, SITE_COLS["special"])
+    out["site_special"] = out[special_col] if special_col else ""
+
+    for c in ["site_name","site_field","site_city","site_special","שם המדריך"]:
         out[c] = out[c].apply(normalize_text)
     return out
 
+# ===== רשימת קואורדינטות ערים בישראל (ניתן להרחיב כרצונך) =====
+cities_coords = {
+    "תל אביב": (32.0853, 34.7818),
+    "ירושלים": (31.7683, 35.2137),
+    "חיפה": (32.7940, 34.9896),
+    "רמת גן": (32.0684, 34.8248),
+    "גבעתיים": (32.0700, 34.8089),
+    "בת ים": (32.0171, 34.7454),
+    "חולון": (32.0158, 34.7874),
+    "פתח תקווה": (32.0840, 34.8878),
+    "ראשון לציון": (31.9710, 34.7894),
+    "רחובות": (31.8948, 34.8113),
+    "נתניה": (32.3215, 34.8532),
+    "הרצליה": (32.1663, 34.8439),
+    "מודיעין": (31.8980, 35.0104),
+    "אשדוד": (31.8014, 34.6436),
+    "באר שבע": (31.2520, 34.7915),
+    "עכו": (32.9234, 35.0827),
+    "נהריה": (33.0058, 35.0940),
+    "כרמיאל": (32.9171, 35.3050),
+    "צפת": (32.9646, 35.4960),
+    "נוף הגליל": (32.7019, 35.3033),
+    "טבריה": (32.7922, 35.5312),
+    "גוליס": (33.0330, 35.3160),  # יישוב קטן לדוגמה
+}
+
+# ===== פונקציות מרחק בין ערים =====
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371.0  # ק"מ
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat/2)**2 + cos(radians(lat1))*cos(radians(lat2))*sin(dlon/2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+    return R * c
+
+def city_distance_km(city1: str, city2: str) -> Optional[float]:
+    city1 = (city1 or "").strip()
+    city2 = (city2 or "").strip()
+    if not city1 or not city2:
+        return None
+    if city1 == city2:
+        return 0.0
+    if city1 not in cities_coords or city2 not in cities_coords:
+        return None
+    lat1, lon1 = cities_coords[city1]
+    lat2, lon2 = cities_coords[city2]
+    return haversine(lat1, lon1, lat2, lon2)
+
+# ====== חישוב ציון מדויק לפי המשקולות ======
 def compute_score(stu: pd.Series, site: pd.Series, W: Weights) -> float:
-    # תחום
-    field_score = 50 if stu.get("stu_pref") and \
-                        site.get("site_field") and \
-                        stu["stu_pref"] in str(site["site_field"]) else 0
-    
-    # בקשה מיוחדת
-    special_score = 45 if stu.get("stu_req") and site.get("site_name") and \
-                          any(word in str(stu["stu_req"]) for word in ["קרוב","נגיש","מותאם"]) else 0
-    
-    # עיר לפי מרחק
-    city_score = 0
+    # נוודא מחרוזות נקיות
+    stu_pref = str(stu.get("stu_pref", "")).strip()
+    site_field = str(site.get("site_field", "")).strip()
+    stu_req  = str(stu.get("stu_req", "")).strip()
+    site_special = str(site.get("site_special", "")).strip()
     stu_city = str(stu.get("stu_city", "")).strip()
     site_city = str(site.get("site_city", "")).strip()
+
+    # 1) תחום (0/50)
+    field_score = 50 if (stu_pref and site_field and (stu_pref in site_field)) else 0
+
+    # 2) עיר (0..5 לפי מרחק)
+    city_score = 0
     if stu_city and site_city:
-        dist = city_distance(stu_city, site_city)
-        if dist is not None:
+        dist = city_distance_km(stu_city, site_city)
+        if dist is None:
+            # לא ידועים קואורדינטות: ניתן ניקוד מלא אם זהות מילולית
+            city_score = 5 if (stu_city == site_city) else 0
+        else:
             if dist <= 5:
                 city_score = 5
             elif dist <= 20:
@@ -321,12 +291,32 @@ def compute_score(stu: pd.Series, site: pd.Series, W: Weights) -> float:
                 city_score = 1
             else:
                 city_score = 0
-    
-    total_score = field_score + special_score + city_score
-    
-    # ציון מינימום
-    return max(total_score, 20)
 
+    # 3) בקשה מיוחדת (0/45)
+    # לוגיקה:
+    #   - אם הסטודנט כתב "קרוב" / "קרבה" → נדרוש קרבה מרחקית (dist<=20) כדי לתת 45.
+    #   - אחרת ננסה התאמת טקסט פשוטה בין הבקשה לטקסט של המוסד (site_special / field / name).
+    special_score = 0
+    if stu_req:
+        req = stu_req
+        near_words = ["קרוב", "קרבה", "סמוך", "בסביבה", "ליד"]
+        if any(w in req for w in near_words):
+            # נסתמך על city_score שנגזר מהמרחק: 3/5 מצביע על קרבה מספקת
+            if city_score >= 3:
+                special_score = 45
+        else:
+            haystack = " ".join([site_special, site_field, str(site.get("site_name","")), site_city]).strip()
+            if haystack and req and (req in haystack):
+                special_score = 45
+
+    # סכימה סופית
+    total = field_score + special_score + city_score
+
+    # ציון מינימום
+    total = max(total, MIN_SCORE)
+
+    # קלמפ בין 0 ל-100 (למקרה של שינויים עתידיים)
+    return float(np.clip(total, 0, 100))
 
 # ====== שיבוץ ======
 def greedy_match(students_df: pd.DataFrame, sites_df: pd.DataFrame, W: Weights) -> pd.DataFrame:
@@ -344,7 +334,7 @@ def greedy_match(students_df: pd.DataFrame, sites_df: pd.DataFrame, W: Weights) 
                 "עיר המוסד": "",
                 "תחום ההתמחות במוסד": "",
                 "שם המדריך": "",
-                "אחוז התאמה": 0
+                "אחוז התאמה": MIN_SCORE  # גם כשאין, נשמור מינימום
             })
             continue
 
@@ -363,7 +353,7 @@ def greedy_match(students_df: pd.DataFrame, sites_df: pd.DataFrame, W: Weights) 
                 "עיר המוסד": "",
                 "תחום ההתמחות במוסד": "",
                 "שם המדריך": "",
-                "אחוז התאמה": 0
+                "אחוז התאמה": MIN_SCORE
             })
             continue
 
@@ -382,12 +372,10 @@ def greedy_match(students_df: pd.DataFrame, sites_df: pd.DataFrame, W: Weights) 
             "עיר המוסד": chosen.get("site_city", ""),
             "תחום ההתמחות במוסד": chosen["site_field"],
             "שם המדריך": sup_name,
-            "אחוז התאמה": round(chosen["score"], 1)
+            "אחוז התאמה": round(float(chosen["score"]), 1)
         })
 
     return pd.DataFrame(results)
-
-
 
 # =========================
 # 1) הוראות שימוש
@@ -395,10 +383,10 @@ def greedy_match(students_df: pd.DataFrame, sites_df: pd.DataFrame, W: Weights) 
 st.markdown("## 📘 הוראות שימוש")
 st.markdown("""
 1. **קובץ סטודנטים (CSV/XLSX):** שם פרטי, שם משפחה, תעודת זהות, כתובת/עיר, טלפון, אימייל.  
-   אופציונלי: תחום מועדף, בקשה מיוחדת, בן/בת זוג להכשרה.  
-2. **קובץ אתרים/מדריכים (CSV/XLSX):** מוסד/שירות, תחום התמחות, רחוב, עיר, מספר סטודנטים שניתן לקלוט השנה, מדריך, חוות דעת מדריך.  
-3. **בצע שיבוץ** מחשב *אחוז התאמה* לפי תחום (50%), בקשות מיוחדות (45%), עיר (5%). 
-4. בסוף אפשר להוריד **XLSX**. 
+   אופציונלי: תחום מועדף/תחומים מועדפים, בקשה מיוחדת, בן/בת זוג להכשרה.  
+2. **קובץ אתרים/מדריכים (CSV/XLSX):** מוסד/שירות, תחום התמחות, רחוב, עיר, מספר סטודנטים שניתן לקלוט השנה, מדריך, (אופציונלי) בקשות מיוחדות/חוות דעת.  
+3. לחצו **בצע שיבוץ** – המערכת מחשבת *אחוז התאמה* לפי תחום (50%), בקשות מיוחדות (45%), עיר (5%, לפי מרחק).  
+4. בסוף אפשר להוריד **XLSX** של התוצאות ושל סיכום לפי מוסד. 
 """)
 
 # =========================
@@ -447,7 +435,7 @@ with colB:
         except Exception as e:
             st.error(f"לא ניתן לקרוא את קובץ האתרים/מדריכים: {e}")
 
-for k in ["df_students_raw","df_sites_raw","result_df","unmatched_students","unused_sites"]:
+for k in ["df_students_raw","df_sites_raw","result_df"]:
     st.session_state.setdefault(k, None)
 
 # ---- יצירת XLSX ----
