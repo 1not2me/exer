@@ -264,7 +264,6 @@ def city_distance_km(city1: str, city2: str) -> Optional[float]:
 
 # ====== חישוב ציון מדויק לפי המשקולות ======
 def compute_score(stu: pd.Series, site: pd.Series, W: Weights) -> float:
-    # נוודא מחרוזות נקיות
     stu_pref = str(stu.get("stu_pref", "")).strip()
     site_field = str(site.get("site_field", "")).strip()
     stu_req  = str(stu.get("stu_req", "")).strip()
@@ -272,51 +271,39 @@ def compute_score(stu: pd.Series, site: pd.Series, W: Weights) -> float:
     stu_city = str(stu.get("stu_city", "")).strip()
     site_city = str(site.get("site_city", "")).strip()
 
-    # 1) תחום (0/50)
+    # 1) תחום – 50 נק'
     field_score = 50 if (stu_pref and site_field and (stu_pref in site_field)) else 0
 
-    # 2) עיר (0..5 לפי מרחק)
-    city_score = 0
-    if stu_city and site_city:
-        dist = city_distance_km(stu_city, site_city)
-        if dist is None:
-            # לא ידועים קואורדינטות: ניתן ניקוד מלא אם זהות מילולית
-            city_score = 5 if (stu_city == site_city) else 0
-        else:
-            if dist <= 5:
-                city_score = 5
-            elif dist <= 20:
-                city_score = 3
-            elif dist <= 50:
-                city_score = 1
-            else:
-                city_score = 0
-
-    # 3) בקשה מיוחדת (0/45)
-    # לוגיקה:
-    #   - אם הסטודנט כתב "קרוב" / "קרבה" → נדרוש קרבה מרחקית (dist<=20) כדי לתת 45.
-    #   - אחרת ננסה התאמת טקסט פשוטה בין הבקשה לטקסט של המוסד (site_special / field / name).
+    # 2) בקשה מיוחדת – 45 נק'
     special_score = 0
     if stu_req:
-        req = stu_req
         near_words = ["קרוב", "קרבה", "סמוך", "בסביבה", "ליד"]
-        if any(w in req for w in near_words):
-            # נסתמך על city_score שנגזר מהמרחק: 3/5 מצביע על קרבה מספקת
-            if city_score >= 3:
+        if any(w in stu_req for w in near_words):
+            # אם הבקשה היא קרבה – נבדוק מרחק
+            dist = city_distance_km(stu_city, site_city)
+            if dist is not None and dist <= 20:
                 special_score = 45
         else:
-            haystack = " ".join([site_special, site_field, str(site.get("site_name","")), site_city]).strip()
-            if haystack and req and (req in haystack):
+            # אם הבקשה היא אחרת – נבדוק התאמת טקסט למוסד
+            haystack = " ".join([site_special, site_field, site_city]).strip()
+            if haystack and stu_req in haystack:
                 special_score = 45
 
-    # סכימה סופית
+    # 3) עיר – עד 5 נק' בלבד
+    city_score = 0
+    dist = city_distance_km(stu_city, site_city)
+    if dist is not None:
+        if dist <= 5:
+            city_score = 5
+        elif dist <= 20:
+            city_score = 3
+        elif dist <= 50:
+            city_score = 1
+
     total = field_score + special_score + city_score
 
-    # ציון מינימום
-    total = max(total, MIN_SCORE)
-
-    # קלמפ בין 0 ל-100 (למקרה של שינויים עתידיים)
-    return float(np.clip(total, 0, 100))
+    # ציון מינימלי 20
+    return max(total, 20)
 
 # ====== שיבוץ ======
 def greedy_match(students_df: pd.DataFrame, sites_df: pd.DataFrame, W: Weights) -> pd.DataFrame:
