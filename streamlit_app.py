@@ -1,361 +1,343 @@
-# streamlit_app.py
+# matcher_streamlit_beauty_rtl_v7_fixed.py 
 # -*- coding: utf-8 -*-
-import os
-from pathlib import Path
-from io import BytesIO
-from datetime import datetime
-import re
-
 import streamlit as st
 import pandas as pd
+import numpy as np
+from io import BytesIO
+from dataclasses import dataclass
+from typing import Optional, Any, List
 
-# ===== הגדרות קבועות =====
-st.set_page_config(page_title="מיפוי מדריכים לשיבוץ סטודנטים - תשפ\"ו", layout="centered")
-ADMIN_PASSWORD = "rawan_0304"
+# =========================
+# קונפיגורציה כללית
+# =========================
+st.set_page_config(page_title="מערכת שיבוץ סטודנטים – התאמה חכמה", layout="wide")
 
-DATA_DIR   = Path("data")
-BACKUP_DIR = DATA_DIR / "backups"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-
-CSV_FILE      = DATA_DIR / "שאלון_שיבוץ.csv"         # קובץ ראשי (מצטבר, לעולם לא מתאפס)
-CSV_LOG_FILE  = DATA_DIR / "שאלון_שיבוץ_log.csv"     # יומן הוספות (Append-Only)
-ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "rawan_0304")  # מומלץ לשים ב-secrets
-
-# ספריית נתונים + קבצים
-DATA_DIR = Path("data")
-BACKUP_DIR = DATA_DIR / "backups"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-
-CSV_FILE = DATA_DIR / "mapping_data.csv"          # קובץ ראשי (נשמר ומעודכן)
-CSV_LOG_FILE = DATA_DIR / "mapping_data_log.csv"  # קובץ יומן הוספות (Append-Only)
-SITES_FILE = DATA_DIR / "sites_catalog.csv"       # אופציונלי: קטלוג מוסדות/תחומים
-
-# ===== רשימת תחומי התמחות (ניתן לעדכן בהתאם לשאלון הסטודנטים) =====
-SPECIALIZATIONS = [
-    "מערכות מידע רפואיות", "בריאות דיגיטלית", "רווחה", "חינוך", "קהילה",
-    "סיעוד", "פסיכולוגיה קהילתית", "מנהל מערכות מידע", "ניתוח נתונים", "סיוע טכנולוגי",
-    "אחר"
-]
-
-# ===== סדר עמודות רצוי (כולל תאריך) =====
-COLUMNS_ORDER = [
-    "תאריך",
-    "שם פרטי",
-    "שם משפחה",
-    "סטטוס מדריך",
-    "מוסד",
-    "תחום התמחות",
-    "רחוב",
-    "עיר",
-    "מיקוד",
-    "מספר סטודנטים שניתן לקלוט (1 או 2)",
-    "מעוניין להמשיך",
-    "בקשות מיוחדות",
-    "טלפון",
-    "אימייל",
-]
-
-def reorder_columns(df: pd.DataFrame) -> pd.DataFrame:
-    known = [c for c in COLUMNS_ORDER if c in df.columns]
-    extra = [c for c in df.columns if c not in known]
-    return df[known + extra]
-
-# ===== עיצוב =====
+# ====== CSS – עיצוב מודרני + RTL ======
 st.markdown("""
 <style>
-:root{
-  --ink:#0f172a; 
-  --muted:#475569; 
-  --ring:rgba(99,102,241,.25); 
-  --card:rgba(255,255,255,.85);
+@import url('https://fonts.googleapis.com/css2?family=Rubik:wght@400;600&display=swap');
+
+html, body, [class*="css"] { 
+  font-family: 'Rubik', 'David', sans-serif !important; 
 }
-html, body, [class*="css"] { font-family: system-ui, "Segoe UI", Arial; }
-.stApp, .main, [data-testid="stSidebar"]{ direction:rtl; text-align:right; }
+
+:root{
+  --bg-1:#e0f7fa;
+  --bg-2:#ede7f6;
+  --bg-3:#fff3e0;
+  --bg-4:#fce4ec;
+  --bg-5:#e8f5e9;
+  --ink:#0f172a;
+  --primary:#9b5de5;
+  --primary-700:#f15bb5;
+  --ring:rgba(155,93,229,.35);
+}
+
 [data-testid="stAppViewContainer"]{
   background:
-    radial-gradient(1200px 600px at 8% 8%, #e0f7fa 0%, transparent 65%),
-    radial-gradient(1000px 500px at 92% 12%, #ede7f6 0%, transparent 60%),
-    radial-gradient(900px 500px at 20% 90%, #fff3e0 0%, transparent 55%);
+    radial-gradient(1200px 600px at 15% 10%, var(--bg-2) 0%, transparent 70%),
+    radial-gradient(1000px 700px at 85% 20%, var(--bg-3) 0%, transparent 70%),
+    radial-gradient(900px 500px at 50% 80%, var(--bg-4) 0%, transparent 70%),
+    radial-gradient(700px 400px at 10% 85%, var(--bg-5) 0%, transparent 70%),
+    linear-gradient(135deg, var(--bg-1) 0%, #ffffff 100%) !important;
+  color: var(--ink);
 }
-.block-container{ padding-top:1.1rem; }
-[data-testid="stForm"]{
-  background:var(--card);
-  border:1px solid #e2e8f0;
-  border-radius:16px;
-  padding:18px 20px;
-  box-shadow:0 8px 24px rgba(2,6,23,.06);
+
+.main .block-container{
+  background: rgba(255,255,255,.78);
+  backdrop-filter: blur(10px);
+  border:1px solid rgba(15,23,42,.08);
+  box-shadow:0 15px 35px rgba(15,23,42,.08);
+  border-radius:24px;
+  padding:2.5rem;
+  margin-top:1rem;
 }
-[data-testid="stWidgetLabel"] p{ text-align:right; margin-bottom:.25rem; color:var(--muted); }
-[data-testid="stWidgetLabel"] p::after{ content: " :"; }
-input, textarea, select{ direction:rtl; text-align:right; }
+
+h1,h2,h3,.stMarkdown h1,.stMarkdown h2{
+  text-align:center;
+  letter-spacing:.5px;
+  text-shadow:0 1px 2px rgba(255,255,255,.7);
+  font-weight:700;
+  color:#222;
+  margin-bottom:1rem;
+}
+
+.stButton > button,
+div[data-testid="stDownloadButton"] > button{
+  background:linear-gradient(135deg,var(--primary) 0%,var(--primary-700) 100%)!important;
+  color:#fff!important;
+  border:none!important;
+  border-radius:18px!important;
+  padding:1rem 2rem!important;
+  font-size:1.1rem!important;
+  font-weight:600!important;
+  box-shadow:0 8px 18px var(--ring)!important;
+  transition:all .15s ease!important;
+  width:100% !important;
+}
+.stButton > button:hover,
+div[data-testid="stDownloadButton"] > button:hover{ 
+  transform:translateY(-3px) scale(1.02); 
+  filter:brightness(1.08); 
+}
+.stButton > button:focus,
+div[data-testid="stDownloadButton"] > button:focus{ 
+  outline:none!important; 
+  box-shadow:0 0 0 4px var(--ring)!important; 
+}
+
+.stApp,.main,[data-testid="stSidebar"]{ direction:rtl; text-align:right; }
+label,.stMarkdown,.stText,.stCaption{ text-align:right!important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ===== פונקציות עזר לקבצים =====
-def load_csv_safely(path: Path) -> pd.DataFrame:
-    if path.exists():
-        try:
-            return pd.read_csv(path)
-        except Exception:
-            try:
-                return pd.read_csv(path, encoding="utf-8-sig")
-            except Exception:
-                return pd.DataFrame()
-    return pd.DataFrame()
+# ====== כותרת ======
+st.markdown("<h1>מערכת שיבוץ סטודנטים – התאמה חכמה</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center;color:#475569;margin-top:-8px;'>כאן משבצים סטודנטים למקומות התמחות בקלות, בהתבסס על תחום, עיר ובקשות.</p>", unsafe_allow_html=True)
 
-def save_master_dataframe(df: pd.DataFrame) -> None:
-    df = reorder_columns(df.copy())
-    temp_path = CSV_FILE.with_suffix(".tmp.csv")
-    df.to_csv(temp_path, index=False, encoding="utf-8-sig")
-    temp_path.replace(CSV_FILE)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = BACKUP_DIR / f"mapping_data_{ts}.csv"
-    df.to_csv(backup_path, index=False, encoding="utf-8-sig")
+# ====== מודל ניקוד ======
+@dataclass
+class Weights:
+    w_field: float = 0.50
+    w_city: float = 0.05
+    w_special: float = 0.45
 
-def append_to_log(row_df: pd.DataFrame) -> None:
-    row_df = reorder_columns(row_df.copy())
-    file_exists = CSV_LOG_FILE.exists()
-    row_df.to_csv(
-        CSV_LOG_FILE,
-        mode="a",
-        header=not file_exists,
-        index=False,
-        encoding="utf-8-sig"
+# עמודות סטודנטים
+STU_COLS = {
+    "id": ["מספר תעודת זהות", "תעודת זהות", "ת\"ז", "תז", "תעודת זהות הסטודנט"],
+    "first": ["שם פרטי"],
+    "last": ["שם משפחה"],
+    "address": ["כתובת", "כתובת הסטודנט", "רחוב"],
+    "city": ["עיר מגורים", "עיר"],
+    "phone": ["טלפון", "מספר טלפון"],
+    "email": ["דוא\"ל", "דוא״ל", "אימייל", "כתובת אימייל", "כתובת מייל"],
+    "preferred_field": ["תחום מועדף","תחומים מועדפים"],
+    "special_req": ["בקשה מיוחדת"],
+    "partner": ["בן/בת זוג להכשרה", "בן\\בת זוג להכשרה", "בן/בת זוג", "בן\\בת זוג"]
+}
+
+# עמודות אתרים
+SITE_COLS = {
+    "name": ["מוסד / שירות הכשרה", "מוסד", "שם מוסד ההתמחות", "שם המוסד", "מוסד ההכשרה"],
+    "field": ["תחום ההתמחות", "תחום התמחות"],
+    "street": ["רחוב"],
+    "city": ["עיר"],
+    "capacity": ["מספר סטודנטים שניתן לקלוט השנה", "מספר סטודנטים שניתן לקלוט", "קיבולת"],
+    "sup_first": ["שם פרטי"],
+    "sup_last": ["שם משפחה"],
+    "phone": ["טלפון"],
+    "email": ["אימייל", "כתובת מייל", "דוא\"ל", "דוא״ל"],
+    "review": ["חוות דעת מדריך"]
+}
+
+def pick_col(df: pd.DataFrame, options: List[str]) -> Optional[str]:
+    for opt in options:
+        if opt in df.columns: return opt
+    return None
+
+# ----- קריאת קבצים -----
+def read_any(uploaded) -> pd.DataFrame:
+    name = (uploaded.name or "").lower()
+    if name.endswith(".csv"):
+        return pd.read_csv(uploaded, encoding="utf-8-sig")
+    if name.endswith((".xlsx",".xls")):
+        return pd.read_excel(uploaded)
+    return pd.read_csv(uploaded, encoding="utf-8-sig")
+
+def normalize_text(x: Any) -> str:
+    if x is None: return ""
+    return str(x).strip()
+
+# ----- סטודנטים -----
+def resolve_students(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    out["stu_id"] = out[pick_col(out, STU_COLS["id"])]
+    out["stu_first"] = out[pick_col(out, STU_COLS["first"])]
+    out["stu_last"]  = out[pick_col(out, STU_COLS["last"])]
+    out["stu_city"]  = out[pick_col(out, STU_COLS["city"])] if pick_col(out, STU_COLS["city"]) else ""
+    out["stu_pref"]  = out[pick_col(out, STU_COLS["preferred_field"])] if pick_col(out, STU_COLS["preferred_field"]) else ""
+    out["stu_req"]   = out[pick_col(out, STU_COLS["special_req"])] if pick_col(out, STU_COLS["special_req"]) else ""
+    for c in ["stu_id","stu_first","stu_last","stu_city","stu_pref","stu_req"]:
+        out[c] = out[c].apply(normalize_text)
+    return out
+
+# ----- אתרים -----
+def resolve_sites(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    out["site_name"]  = out[pick_col(out, SITE_COLS["name"])]
+    out["site_field"] = out[pick_col(out, SITE_COLS["field"])]
+    out["site_city"]  = out[pick_col(out, SITE_COLS["city"])]
+    cap_col = pick_col(out, SITE_COLS["capacity"])
+    out["site_capacity"] = pd.to_numeric(out[cap_col], errors="coerce").fillna(1).astype(int) if cap_col else 1
+    out["capacity_left"] = out["site_capacity"].astype(int)
+    sup_first = pick_col(out, SITE_COLS["sup_first"])
+    sup_last  = pick_col(out, SITE_COLS["sup_last"])
+    out["שם המדריך"] = ""
+    if sup_first or sup_last:
+        ff = out[sup_first] if sup_first else ""
+        ll = out[sup_last]  if sup_last else ""
+        out["שם המדריך"] = (ff.astype(str) + " " + ll.astype(str)).str.strip()
+    for c in ["site_name","site_field","site_city","שם המדריך"]:
+        out[c] = out[c].apply(normalize_text)
+    return out
+
+# ====== חישוב ציון ======
+def compute_score(stu: pd.Series, site: pd.Series, W: Weights) -> float:
+    same_city = (stu.get("stu_city") and site.get("site_city") and stu.get("stu_city") == site.get("site_city"))
+    field_s   = 90.0 if stu.get("stu_pref") and stu.get("stu_pref") in site.get("site_field","") else 60.0
+    city_s    = 100.0 if same_city else 65.0
+    special_s = 90.0 if "קרוב" in stu.get("stu_req","") and same_city else 70.0
+    score = W.w_field*field_s + W.w_city*city_s + W.w_special*special_s
+    return float(np.clip(score, 0, 100))
+
+# ====== שיבוץ ======
+def greedy_match(students_df: pd.DataFrame, sites_df: pd.DataFrame, W: Weights) -> pd.DataFrame:
+    results = []
+    supervisor_count = {}
+
+    for _, s in students_df.iterrows():
+        cand = sites_df[sites_df["capacity_left"] > 0].copy()
+        if cand.empty:
+            results.append({
+                "ת\"ז הסטודנט": s["stu_id"],
+                "שם פרטי": s["stu_first"],
+                "שם משפחה": s["stu_last"],
+                "שם מקום ההתמחות": "לא שובץ",
+                "עיר המוסד": "",
+                "תחום ההתמחות במוסד": "",
+                "שם המדריך": "",
+                "אחוז התאמה": 0
+            })
+            continue
+
+        # מחשב לכל אתר ציון התאמה לפי הנוסחה
+        cand["score"] = cand.apply(lambda r: compute_score(s, r, W), axis=1)
+
+        # מגבלה: עד 2 סטודנטים לכל מדריך
+        cand = cand[cand.apply(lambda r: supervisor_count.get(r.get("שם המדריך",""),0) < 2, axis=1)]
+
+        if cand.empty:
+            results.append({
+                "ת\"ז הסטודנט": s["stu_id"],
+                "שם פרטי": s["stu_first"],
+                "שם משפחה": s["stu_last"],
+                "שם מקום ההתמחות": "לא שובץ",
+                "עיר המוסד": "",
+                "תחום ההתמחות במוסד": "",
+                "שם המדריך": "",
+                "אחוז התאמה": 0
+            })
+            continue
+
+        chosen = cand.sort_values("score", ascending=False).iloc[0]
+        idx = chosen.name
+        sites_df.at[idx, "capacity_left"] -= 1
+
+        sup_name = chosen.get("שם המדריך", "")
+        supervisor_count[sup_name] = supervisor_count.get(sup_name, 0) + 1
+
+        results.append({
+            "ת\"ז הסטודנט": s["stu_id"],
+            "שם פרטי": s["stu_first"],
+            "שם משפחה": s["stu_last"],
+            "שם מקום ההתמחות": chosen["site_name"],
+            "עיר המוסד": chosen.get("site_city", ""),
+            "תחום ההתמחות במוסד": chosen["site_field"],
+            "שם המדריך": sup_name,
+            "אחוז התאמה": round(chosen["score"], 1)
+        })
+
+    return pd.DataFrame(results)
+
+
+
+# ---- יצירת XLSX ----
+def df_to_xlsx_bytes(df: pd.DataFrame, sheet_name: str = "שיבוץ") -> bytes:
+    xlsx_io = BytesIO()
+    import xlsxwriter
+    with pd.ExcelWriter(xlsx_io, engine="xlsxwriter") as writer:
+        cols = list(df.columns)
+        has_match_col = "אחוז התאמה" in cols
+        if has_match_col:
+            cols = [c for c in cols if c != "אחוז התאמה"] + ["אחוז התאמה"]
+
+        df[cols].to_excel(writer, index=False, sheet_name=sheet_name)
+
+        if has_match_col:
+            workbook  = writer.book
+            worksheet = writer.sheets[sheet_name]
+            red_fmt = workbook.add_format({"font_color": "red"})
+            col_idx = len(cols) - 1
+            worksheet.set_column(col_idx, col_idx, 12, red_fmt)
+    xlsx_io.seek(0)
+    return xlsx_io.getvalue()
+
+# =========================
+# שיבוץ והצגת תוצאות
+# =========================
+if "result_df" not in st.session_state:
+    st.session_state["result_df"] = None
+
+st.markdown("## ⚙️ ביצוע השיבוץ")
+if st.button("🚀 בצע שיבוץ", use_container_width=True):
+    try:
+        students = resolve_students(st.session_state["df_students_raw"])
+        sites    = resolve_sites(st.session_state["df_sites_raw"])
+        result_df = greedy_match(students, sites, Weights())
+        st.session_state["result_df"] = result_df
+        st.success("השיבוץ הושלם ✓")
+    except Exception as e:
+        st.exception(e)
+
+if isinstance(st.session_state["result_df"], pd.DataFrame) and not st.session_state["result_df"].empty:
+    st.markdown("## 📊 תוצאות השיבוץ")
+
+    df_show = st.session_state["result_df"].copy()
+
+    # העברת תחום ההתמחות אחרי שם מקום ההתמחות
+    cols = list(df_show.columns)
+    if "תחום ההתמחות במוסד" in cols and "שם מקום ההתמחות" in cols:
+        cols.insert(cols.index("שם מקום ההתמחות")+1, cols.pop(cols.index("תחום ההתמחות במוסד")))
+        df_show = df_show[cols]
+
+    st.dataframe(df_show, use_container_width=True)
+
+    # הורדת קובץ תוצאות
+    xlsx_results = df_to_xlsx_bytes(df_show, sheet_name="תוצאות")
+    st.download_button("⬇️ הורדת XLSX – תוצאות השיבוץ", data=xlsx_results,
+        file_name="student_site_matching.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    # --- טבלת סיכום ---
+    summary_df = (
+        st.session_state["result_df"]
+        .groupby(["שם מקום ההתמחות","תחום ההתמחות במוסד","שם המדריך"])
+        .agg({
+            "ת\"ז הסטודנט":"count",
+            "שם פרטי": list,
+            "שם משפחה": list
+        }).reset_index()
+    )
+    summary_df.rename(columns={"ת\"ז הסטודנט":"כמה סטודנטים"}, inplace=True)
+
+    # המלצת שיבוץ – שם מלא
+    summary_df["המלצת שיבוץ"] = summary_df.apply(
+        lambda row: " + ".join([f"{f} {l}" for f, l in zip(row["שם פרטי"], row["שם משפחה"])]),
+        axis=1
     )
 
-def dataframe_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Sheet1") -> bytes:
-    df = reorder_columns(df.copy())
-    bio = BytesIO()
-    with pd.ExcelWriter(bio, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name=sheet_name)
-        ws = writer.sheets[sheet_name]
-        for i, col in enumerate(df.columns):
-            width = min(60, max(12, int(df[col].astype(str).map(len).max() if not df.empty else 12) + 4))
-            ws.set_column(i, i, width)
-    bio.seek(0)
-    return bio.read()
+    summary_df = summary_df[[
+        "שם מקום ההתמחות",
+        "תחום ההתמחות במוסד",
+        "שם המדריך",
+        "כמה סטודנטים",
+        "המלצת שיבוץ"
+    ]]
 
-# ===== קריאת קטלוג מוסדות/תחומים (אופציונלי) =====
-def load_sites_catalog() -> pd.DataFrame:
-    if not SITES_FILE.exists():
-        return pd.DataFrame()
-    df = load_csv_safely(SITES_FILE)
-    if df.empty:
-        st.warning("⚠ קובץ הקטלוג קיים אך ריק.")
-        return pd.DataFrame()
+    st.markdown("### 📝 טבלת סיכום לפי מקום הכשרה")
+    st.dataframe(summary_df, use_container_width=True)
 
-    cols = {c.strip(): c for c in df.columns}
-    def pick(*options):
-        for opt in options:
-            if opt in cols:
-                return cols[opt]
-        return None
-
-    col_institute = pick('מוסד', 'שם מוסד', 'שם מוסד/שירות ההכשרה', 'Institution')
-    col_spec      = pick('תחום התמחות', 'תחום', 'התמחות', 'Specialization')
-
-    if not col_institute or not col_spec:
-        st.warning("⚠ בקטלוג חסרות עמודות חובה: 'מוסד' ו'תחום התמחות'. הטופס יעבוד במצב קלט חופשי.")
-        return pd.DataFrame()
-
-    clean = (
-        df[[col_institute, col_spec]]
-        .rename(columns={col_institute: 'מוסד', col_spec: 'תחום התמחות'})
-        .dropna().drop_duplicates().reset_index(drop=True)
-    )
-    for c in ['מוסד', 'תחום התמחות']:
-        clean[c] = clean[c].astype(str).str.strip()
-    return clean
-
-sites_df = load_sites_catalog()
-sites_available = not sites_df.empty
-known_specs = sorted(sites_df['תחום התמחות'].dropna().unique().tolist()) if sites_available else SPECIALIZATIONS[:]
-known_institutions = sorted(sites_df['מוסד'].dropna().unique().tolist()) if sites_available else []
-
-# ===== בדיקת מצב מנהל =====
-try:
-    params = st.experimental_get_query_params()
-    admin_flag = params.get("admin", ["0"])[0]
-except Exception:
-    admin_flag = "0"
-is_admin_mode = (admin_flag == "1")
-
-# ===== מצב מנהל =====
-if is_admin_mode:
-    st.title("🔑 גישת מנהל - צפייה וייצוא נתונים")
-
-    password = st.text_input("הכנס סיסמת מנהל", type="password", key="admin_pwd_input")
-    if password == ADMIN_PASSWORD:
-        st.success("התחברת בהצלחה ✅")
-
-        df_master = load_csv_safely(CSV_FILE)
-        df_log = load_csv_safely(CSV_LOG_FILE)
-
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("📦 קובץ ראשי (מצטבר)")
-            st.write(f"סה\"כ רשומות: **{len(df_master)}**")
-        with col2:
-            st.subheader("🧾 קובץ יומן (Append-Only)")
-            st.write(f"סה\"כ רשומות (יומן): **{len(df_log)}**")
-
-        st.markdown("### הצגת הקובץ הראשי")
-        if not df_master.empty:
-            st.dataframe(reorder_columns(df_master), use_container_width=True)
-            st.download_button(
-                "📊 הורד Excel (ראשי)",
-                data=dataframe_to_excel_bytes(df_master, sheet_name="Master"),
-                file_name="mapping_data.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="dl_master_xlsx"
-            )
-        else:
-            st.info("⚠ עדיין אין נתונים בקובץ הראשי.")
-
-        st.markdown("---")
-        st.markdown("### הצגת קובץ היומן (Append-Only)")
-        if not df_log.empty:
-            st.dataframe(reorder_columns(df_log), use_container_width=True)
-            st.download_button(
-                "📊 הורד Excel (יומן)",
-                data=dataframe_to_excel_bytes(df_log, sheet_name="Log"),
-                file_name="mapping_data_log.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="dl_log_xlsx"
-            )
-        else:
-            st.info("⚠ עדיין אין נתונים ביומן.")
-    else:
-        if password:
-            st.error("סיסמה שגויה")
-    st.stop()
-
-# ===== טופס למילוי =====
-st.title("📋 מיפוי מדריכים לשיבוץ סטודנטים - שנת הכשרה תשפ\"ו")
-st.write("""
-שלום רב, מטרת טופס זה היא לאסוף מידע עדכני על מדריכים ומוסדות לקראת שיבוץ הסטודנטים לשנה הקרובה.  
-אנא מלא/י את כל השדות בצורה מדויקת. המידע ישמש לצורך תכנון השיבוץ בלבד.
-""")
-
-with st.form("mapping_form"):
-    st.subheader("פרטים אישיים")
-    first_name = st.text_input("שם פרטי *", key="first_name")
-    last_name  = st.text_input("שם משפחה *", key="last_name")
-
-    mentor_status = st.selectbox(
-        "סטטוס מדריך *",
-        ["מדריך חדש (נדרש קורס)", "מדריך ממשיך"],
-        help="מדריך חדש יישלח לקורס הכשרה מתאים.",
-        key="mentor_status"
-    )
-
-    st.subheader("מוסד")
-    spec_choice = st.selectbox("תחום התמחות *", ["בחר מהרשימה"] + known_specs, key="specialization")
-
-    if sites_available and spec_choice in known_specs and spec_choice != "בחר מהרשימה":
-        filtered_institutions = sorted(
-            sites_df[sites_df['תחום התמחות'] == spec_choice]['מוסד'].dropna().unique().tolist()
-        )
-        institute_select = st.selectbox("מוסד *", ["בחר מהרשימה"] + filtered_institutions, key="institute_select")
-    elif sites_available:
-        institute_select = st.selectbox("מוסד *", ["בחר מהרשימה"] + known_institutions, key="institute_select")
-    else:
-        institute_select = st.text_input("מוסד *", key="institute_input")
-
-    st.subheader("כתובת המוסד")
-    street = st.text_input("רחוב *", key="street")
-    city = st.text_input("עיר *", key="city")
-    postal_code = st.text_input("מיקוד *", key="postal_code")
-
-    st.subheader("קליטת סטודנטים")
-    num_students = st.selectbox(
-        "מספר סטודנטים שניתן לקלוט (1 או 2) *",
-        [1, 2],
-        help="על פי הנהלים – מדריך יכול להדריך עד שני סטודנטים לכל היותר.",
-        key="num_students"
-    )
-
-    st.subheader("זמינות להמשך הדרכה")
-    continue_mentoring = st.radio("מעוניין להמשיך *", ["כן", "לא"], key="continue_mentoring")
-
-    st.subheader("בקשות מיוחדות")
-    special_requests = st.text_area(
-        "בקשות מיוחדות (למשל: הדרכה בערב, שפות, נגישות, אילוצים)",
-        placeholder="כתבו כאן כל בקשה שתרצו שניקח בחשבון בשיבוץ",
-        key="special_requests"
-    )
-
-    st.subheader("פרטי התקשרות")
-    phone = st.text_input("טלפון * (אפשר גם בלי מקף)", key="phone")
-    email = st.text_input("אימייל *", key="email")
-
-    submit_btn = st.form_submit_button("שלח/י", use_container_width=True)
-
-# ===== טיפול בטופס =====
-if submit_btn:
-    errors = []
-    if not first_name.strip():
-        errors.append("יש למלא 'שם פרטי'")
-    if not last_name.strip():
-        errors.append("יש למלא 'שם משפחה'")
-    if spec_choice == "בחר מהרשימה":
-        errors.append("יש לבחור 'תחום התמחות'")
-
-    if sites_available:
-        if institute_select == "בחר מהרשימה":
-            errors.append("יש לבחור 'מוסד'")
-        if (spec_choice in known_specs) and (institute_select in known_institutions):
-            ok = not sites_df[(sites_df['תחום התמחות'] == spec_choice) &
-                              (sites_df['מוסד'] == institute_select)].empty
-            if not ok:
-                errors.append("המוסד שנבחר אינו תואם ל'תחום התמחות' שבחרת.")
-        final_institute = institute_select if institute_select != "בחר מהרשימה" else ""
-    else:
-        if not institute_select.strip():
-            errors.append("יש למלא 'מוסד'")
-        final_institute = institute_select.strip()
-
-    if not street.strip():
-        errors.append("יש למלא 'רחוב'")
-    if not city.strip():
-        errors.append("יש למלא 'עיר'")
-    if not postal_code.strip():
-        errors.append("יש למלא 'מיקוד'")
-
-    phone_clean = phone.strip().replace("-", "").replace(" ", "")
-    if not re.match(r"^(0?5\d{8})$", phone_clean):
-        errors.append("מספר הטלפון אינו תקין (דוגמה: 0501234567)")
-
-    if not re.match(r"^[^@]+@[^@]+\.[^@]+$", email.strip()):
-        errors.append("כתובת האימייל אינה תקינה")
-
-    if errors:
-        for e in errors:
-            st.error(e)
-    else:
-        record = {
-            "תאריך": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "שם פרטי": first_name.strip(),
-            "שם משפחה": last_name.strip(),
-            "סטטוס מדריך": mentor_status,
-            "מוסד": final_institute,
-            "תחום התמחות": spec_choice,
-            "רחוב": street.strip(),
-            "עיר": city.strip(),
-            "מיקוד": postal_code.strip(),
-            "מספר סטודנטים שניתן לקלוט (1 או 2)": int(num_students),
-            "מעוניין להמשיך": continue_mentoring,
-            "בקשות מיוחדות": special_requests.strip(),
-            "טלפון": phone_clean,
-            "אימייל": email.strip()
-        }
-        new_row_df = pd.DataFrame([record])
-        master_df = load_csv_safely(CSV_FILE)
-        master_df = pd.concat([master_df, new_row_df], ignore_index=True)
-        save_master_dataframe(master_df)
-        append_to_log(new_row_df)
-
-        st.success("✅ הנתונים נשמרו בהצלחה! תודה רבה 🙏")
-        st.info("טיפ: ניתן לצפות/להוריד את הקבצים במצב מנהל ?admin=1 (עם הסיסמה).")
+    xlsx_summary = df_to_xlsx_bytes(summary_df, sheet_name="סיכום")
+    st.download_button("⬇️ הורדת XLSX – טבלת סיכום", data=xlsx_summary,
+        file_name="student_site_summary.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
