@@ -6,7 +6,122 @@ import numpy as np
 from io import BytesIO
 from dataclasses import dataclass
 from typing import Optional, Any, List
+from math import radians, sin, cos, sqrt, atan2
 
+# ===== חילוץ עיר מהכתובת =====
+def extract_city(address: str) -> str:
+    if pd.isna(address):
+        return ""
+    address = str(address).strip()
+    # ננסה לחלץ לפי פסיק
+    parts = re.split('[,]', address)
+    if len(parts) > 1:
+        return parts[1].strip()
+    return address.split()[-1] if address else ""
+
+# ===== רשימת קואורדינטות ערים בישראל (דוגמה – אפשר להרחיב לקובץ מלא) =====
+cities_coords = {
+    "תל אביב": (32.0853, 34.7818),
+    "חיפה": (32.7940, 34.9896),
+    "עכו": (32.9234, 35.0827),
+    "כרמיאל": (32.9171, 35.3050),
+    "צפת": (32.9646, 35.4960),
+    "נהריה": (33.0058, 35.0940),
+    "רמת גן": (32.0684, 34.8248),
+    "גוליס": (33.0330, 35.3160),
+    "ירושלים": (31.7683, 35.2137)
+}
+
+# ===== פונקציה לחישוב מרחק בין ערים =====
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371.0  # רדיוס כדור הארץ בק"מ
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat/2)**2 + cos(radians(lat1))*cos(radians(lat2))*sin(dlon/2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1-a))
+    return R * c
+
+def city_distance(city1, city2):
+    if city1 not in cities_coords or city2 not in cities_coords:
+        return None
+    lat1, lon1 = cities_coords[city1]
+    lat2, lon2 = cities_coords[city2]
+    return haversine(lat1, lon1, lat2, lon2)
+
+# ===== פונקציית ניקוד =====
+def compute_score(stu, site):
+    # תחום
+    field_score = 50 if pd.notna(stu.get("תחומים מועדפים")) and \
+                        pd.notna(site.get("תחום התמחות")) and \
+                        str(stu["תחומים מועדפים"]).strip() in str(site["תחום התמחות"]).strip() else 0
+    
+    # בקשה מיוחדת
+    special_score = 45 if pd.notna(stu.get("בקשה מיוחדת")) and \
+                          pd.notna(site.get("בקשות מיוחדות")) and \
+                          any(word in str(site["בקשות מיוחדות"]) 
+                              for word in str(stu["בקשה מיוחדת"]).split()) else 0
+    
+    # עיר לפי מרחק
+    stu_city = str(stu.get("עיר", "")).strip()
+    site_city = str(site.get("עיר", "")).strip()
+    city_score = 0
+    if stu_city and site_city:
+        dist = city_distance(stu_city, site_city)
+        if dist is not None:
+            if dist <= 5:
+                city_score = 5
+            elif dist <= 20:
+                city_score = 3
+            elif dist <= 50:
+                city_score = 1
+            else:
+                city_score = 0
+
+    total_score = field_score + special_score + city_score
+
+    # ציון מינימום 20
+    return max(total_score, 20)
+
+# ===== פונקציית שיבוץ =====
+def match_students_to_sites(students_df, sites_df):
+    # הכנה – חילוץ עיר מתוך כתובת אם צריך
+    if "כתובת" in students_df.columns and "עיר" not in students_df.columns:
+        students_df["עיר"] = students_df["כתובת"].apply(extract_city)
+
+    # בחירת עמודות רלוונטיות
+    students = students_df[[
+        "שם פרטי", "שם משפחה", "תעודת זהות", "עיר", "תחומים מועדפים", "בקשה מיוחדת"
+    ]].copy()
+
+    sites = sites_df[[
+        "מוסד", "תחום התמחות", "עיר", "מספר סטודנטים שניתן לקלוט (1 או 2)", "בקשות מיוחדות"
+    ]].copy()
+
+    results = []
+    for i, stu in students.iterrows():
+        best_match = None
+        best_score = -1
+        for j, site in sites.iterrows():
+            score = compute_score(stu, site)
+            if score > best_score and site["מספר סטודנטים שניתן לקלוט (1 או 2)"] > 0:
+                best_score = score
+                best_match = site
+        if best_match is not None:
+            results.append({
+                "ת\"ז סטודנט": stu["תעודת זהות"],
+                "שם סטודנט": f"{stu['שם פרטי']} {stu['שם משפחה']}",
+                "עיר סטודנט": stu["עיר"],
+                "תחום מועדף": stu["תחומים מועדפים"],
+                "בקשה מיוחדת": stu["בקשה מיוחדת"],
+                "מוסד": best_match["מוסד"],
+                "תחום התמחות במוסד": best_match["תחום התמחות"],
+                "עיר מוסד": best_match["עיר"],
+                "אחוז התאמה": best_score
+            })
+            # עדכון קיבולת מוסד
+            sites.at[best_match.name, "מספר סטודנטים שניתן לקלוט (1 או 2)"] -= 1
+
+    return pd.DataFrame(results)
 # =========================
 # קונפיגורציה כללית
 # =========================
