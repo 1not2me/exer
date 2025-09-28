@@ -297,21 +297,36 @@ def resolve_sites(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 def compute_score(stu: pd.Series, site: pd.Series, W: Weights) -> float:
-    # בדיקת תחום
-    field_match = 1 if stu.get("stu_pref") and stu.get("stu_pref") in str(site.get("site_field", "")) else 0
+    # תחום
+    field_score = 50 if stu.get("stu_pref") and \
+                        site.get("site_field") and \
+                        stu["stu_pref"] in str(site["site_field"]) else 0
     
-    # בדיקת עיר
-    city_match = 1 if stu.get("stu_city") and site.get("site_city") and stu.get("stu_city") == site.get("site_city") else 0
+    # בקשה מיוחדת
+    special_score = 45 if stu.get("stu_req") and site.get("site_name") and \
+                          any(word in str(stu["stu_req"]) for word in ["קרוב","נגיש","מותאם"]) else 0
     
-    # בדיקת בקשה מיוחדת
-    special_match = 1 if ("קרוב" in stu.get("stu_req", "")) and city_match == 1 else 0
+    # עיר לפי מרחק
+    city_score = 0
+    stu_city = str(stu.get("stu_city", "")).strip()
+    site_city = str(site.get("site_city", "")).strip()
+    if stu_city and site_city:
+        dist = city_distance(stu_city, site_city)
+        if dist is not None:
+            if dist <= 5:
+                city_score = 5
+            elif dist <= 20:
+                city_score = 3
+            elif dist <= 50:
+                city_score = 1
+            else:
+                city_score = 0
     
-    # חישוב ציון סופי לפי המשקלים (סה"כ 100)
-    score = (W.w_field * 100 * field_match) + \
-            (W.w_city * 100 * city_match) + \
-            (W.w_special * 100 * special_match)
+    total_score = field_score + special_score + city_score
     
-    return round(score, 2)
+    # ציון מינימום
+    return max(total_score, 20)
+
 
 # ====== שיבוץ ======
 def greedy_match(students_df: pd.DataFrame, sites_df: pd.DataFrame, W: Weights) -> pd.DataFrame:
